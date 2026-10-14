@@ -1,4 +1,5 @@
 "use client"
+import { useLocale } from "./locale-provider"
 import { useState } from "react"
 import { ExternalLink, LoaderCircle, LockKeyhole } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -22,6 +23,7 @@ export function LoginDialog({
   siteUrl: string
   onConnected: () => Promise<void>
 }) {
+  const { t, locale } = useLocale()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [busy, setBusy] = useState(false)
@@ -52,7 +54,7 @@ export function LoginDialog({
       setError(
         cause instanceof Error
           ? cause.message
-          : "Sign-in failed. Please try again."
+          : "Sign-in failed. Please try again.",
       )
       setPassword("")
     } finally {
@@ -66,16 +68,18 @@ export function LoginDialog({
           <div className="mb-3 flex size-10 items-center justify-center rounded-xl border bg-muted">
             <LockKeyhole className="size-5" />
           </div>
-          <DialogTitle>Connect to your company</DialogTitle>
+          <DialogTitle>{t("Connect to your company")}</DialogTitle>
           <DialogDescription>
-            Sign in with your ERPNext account at {new URL(siteUrl).host}. Your
-            existing permissions determine which company records you can view.
+            {t("Sign in with your ERPNext account at")} {new URL(siteUrl).host}.{" "}
+            {t(
+              "Your existing permissions determine which company records you can view.",
+            )}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={signIn} className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="erp-username" className="text-sm font-medium">
-              ERPNext email or username
+              {t("ERPNext email or username")}
             </label>
             <Input
               id="erp-username"
@@ -89,7 +93,7 @@ export function LoginDialog({
           </div>
           <div className="space-y-2">
             <label htmlFor="erp-password" className="text-sm font-medium">
-              Password
+              {t("Password")}
             </label>
             <Input
               id="erp-password"
@@ -103,17 +107,18 @@ export function LoginDialog({
           </div>
           {error && (
             <p role="alert" className="text-sm text-destructive">
-              {error}
+              {t(error)}
             </p>
           )}
           <Button type="submit" className="w-full" disabled={busy}>
             {busy && <LoaderCircle className="animate-spin" />}
-            {busy ? "Connecting…" : "Sign in to ERPNext"}
+            {busy ? t("Connecting…") : t("Sign in to ERPNext")}
           </Button>
         </form>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Your password is sent to your company’s ERPNext site and is not saved
-          by this platform.
+          {t(
+            "Your password is sent to your company’s ERPNext site and is not saved by this platform.",
+          )}
         </p>
         <a
           className="flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:underline"
@@ -121,7 +126,7 @@ export function LoginDialog({
           target="_blank"
           rel="noopener noreferrer"
         >
-          Open company ERPNext
+          {t("Open company ERPNext")}
           <ExternalLink className="size-3" />
         </a>
       </DialogContent>

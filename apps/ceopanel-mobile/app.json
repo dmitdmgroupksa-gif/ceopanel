@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Durar Masagh",
+    "slug": "durar-ceopanel",
+    "version": "0.1.0",
+    "orientation": "default",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.durarmasagh.ceopanel",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Attach site photos to company field updates.",
+        "NSMicrophoneUsageDescription": "Use the company voice assistant after choosing Start voice."
+      }
+    },
+    "android": {
+      "package": "com.durarmasagh.ceopanel",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-localization",
+      "expo-status-bar"
+    ]
+  }
+}

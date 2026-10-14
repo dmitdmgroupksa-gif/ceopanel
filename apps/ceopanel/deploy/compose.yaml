@@ -1,0 +1,72 @@
+name: ceopanel
+x-platform: &platform
+  image: ceopanel:local
+  build:
+    context: ..
+  env_file: ${PLATFORM_ENV_FILE:-.env}
+  environment:
+    DATABASE_URL: postgres://ceopanel:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/ceopanel
+    REDIS_URL: redis://redis:6379
+    PLATFORM_CONFIG_PATH: /config/platform.config.json
+    DOCUMENT_STORAGE_PATH: /app/.private-documents
+  volumes:
+    - ../platform.config.json:/config/platform.config.json:ro
+    - documents:/app/.private-documents
+  restart: unless-stopped
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ceopanel
+      POSTGRES_DB: ceopanel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes: ["database:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ceopanel -d ceopanel"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+  migrate:
+    <<: *platform
+    command: ["npm", "run", "db:migrate"]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+  web:
+    <<: *platform
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/platform/status').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      retries: 3
+  worker:
+    <<: *platform
+    command: ["npm", "run", "worker"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+  proxy:
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443"]
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?Set PUBLIC_HOST}
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
+    depends_on: [web]
+    restart: unless-stopped
+volumes:
+  database:
+  redis:
+  documents:
+  caddy_data:
+  caddy_config:

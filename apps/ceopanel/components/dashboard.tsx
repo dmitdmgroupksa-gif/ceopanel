@@ -43,6 +43,9 @@ import {
 import type { DashboardContext } from "@/lib/dashboard-server"
 import { DashboardPanel } from "./dashboard-panel"
 import { LoginDialog } from "./login-dialog"
+import { PlatformLinks } from "./platform-links"
+import { ApprovalInbox } from "./platform-panel"
+import { useLocale } from "./locale-provider"
 
 const icons = {
   comparison: ArrowLeftRight,
@@ -80,11 +83,12 @@ export function Dashboard({
   initialError: string | null
   config: Config
 }) {
+  const { t, locale } = useLocale()
   const [context, setContext] = useState(initial)
   const [active, setActive] = useState<DashboardId>(dashboards[0].id)
   const [days, setDays] = useState(90)
   const [data, setData] = useState<DashboardData>(() =>
-    emptyDashboard(dashboards[0], config.today)
+    emptyDashboard(dashboards[0], config.today),
   )
   const [error, setError] = useState(initialError)
   const [connectionError, setConnectionError] = useState(initialError)
@@ -97,6 +101,9 @@ export function Dashboard({
   const sequence = useRef(0)
   const { resolvedTheme, setTheme } = useTheme()
   const definition = findDashboard(active)!
+  const visibleDashboards = context?.dashboardIds
+    ? dashboards.filter((item) => context.dashboardIds!.includes(item.id))
+    : dashboards
   const visibleData =
     data.dashboardId === active && data.company === (context?.company ?? null)
       ? data
@@ -121,9 +128,10 @@ export function Dashboard({
     if (!element) return
     const update = () =>
       setScroll({
-        left: element.scrollLeft > 2,
+        left: Math.abs(element.scrollLeft) > 2,
         right:
-          element.scrollLeft + element.clientWidth < element.scrollWidth - 2,
+          Math.abs(element.scrollLeft) + element.clientWidth <
+          element.scrollWidth - 2,
       })
     update()
     element.addEventListener("scroll", update, { passive: true })
@@ -171,7 +179,7 @@ export function Dashboard({
         setError(
           cause instanceof Error
             ? cause.message
-            : "Dashboard data could not be loaded."
+            : "Dashboard data could not be loaded.",
         )
     } finally {
       if (token === sequence.current) setBusy(false)
@@ -189,6 +197,14 @@ export function Dashboard({
     }, 60000)
     return () => clearInterval(timer)
   }, [data.status, busy, refresh])
+
+  useEffect(() => {
+    if (
+      visibleDashboards.length &&
+      !visibleDashboards.some((item) => item.id === active)
+    )
+      setActive(visibleDashboards[0].id)
+  }, [context?.dashboardIds, active])
 
   function navigate(id: string) {
     const selected = findDashboard(id)
@@ -213,7 +229,7 @@ export function Dashboard({
       setConnectionError(
         cause instanceof Error
           ? cause.message
-          : "ERPNext connection could not be loaded."
+          : "ERPNext connection could not be loaded.",
       )
     }
   }
@@ -231,7 +247,7 @@ export function Dashboard({
       setConnectionError(null)
     } catch (cause) {
       setConnectionError(
-        cause instanceof Error ? cause.message : "Sign-out failed."
+        cause instanceof Error ? cause.message : "Sign-out failed.",
       )
     } finally {
       setBusy(false)
@@ -240,7 +256,12 @@ export function Dashboard({
 
   return (
     <div className="min-h-screen" data-hydrated={mounted}>
-      <Tabs value={active} onValueChange={navigate} className="gap-0">
+      <Tabs
+        value={active}
+        onValueChange={navigate}
+        dir={locale === "ar" ? "rtl" : "ltr"}
+        className="gap-0"
+      >
         <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
           <div className="mx-auto flex min-h-18 max-w-[1600px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
             <a
@@ -259,7 +280,7 @@ export function Dashboard({
                   {config.companyName}
                 </span>
                 <span className="block text-[11px] text-muted-foreground">
-                  CEO management platform
+                  {t("CEO management platform")}
                 </span>
               </span>
             </a>
@@ -268,7 +289,7 @@ export function Dashboard({
                 <Link
                   href="/workspace"
                   aria-label="Open ERP workspace"
-                  title="ERP workspace"
+                  title={t("ERP workspace")}
                 >
                   <Building2 />
                 </Link>
@@ -277,7 +298,7 @@ export function Dashboard({
                 variant="outline"
                 className="hidden font-normal md:inline-flex"
               >
-                {dashboards.length} CEO dashboards
+                {visibleDashboards.length} {t("CEO dashboards")}
               </Badge>
               <Button
                 variant="ghost"
@@ -293,20 +314,21 @@ export function Dashboard({
                 <Button
                   variant="outline"
                   size="sm"
-                  aria-label="Sign out"
+                  aria-label={t("Sign out")}
                   onClick={signOut}
                   disabled={busy}
                 >
                   <LogOut />
-                  <span className="hidden sm:inline">Sign out</span>
+                  <span className="hidden sm:inline">{t("Sign out")}</span>
                 </Button>
               ) : (
                 <Button size="sm" onClick={() => setConnectOpen(true)}>
-                  Connect ERPNext
+                  {t("Connect ERPNext")}
                 </Button>
               )}
             </div>
           </div>
+          <PlatformLinks />
           <div className="mx-auto flex max-w-[1600px] items-center gap-1 px-3 sm:px-6 lg:px-8">
             <Button
               variant="ghost"
@@ -314,7 +336,10 @@ export function Dashboard({
               aria-label="Scroll dashboard tabs left"
               disabled={!scroll.left}
               onClick={() =>
-                nav.current?.scrollBy({ left: -400, behavior: "smooth" })
+                nav.current?.scrollBy({
+                  left: locale === "ar" ? 400 : -400,
+                  behavior: "smooth",
+                })
               }
             >
               <ChevronLeft />
@@ -328,7 +353,7 @@ export function Dashboard({
                 aria-label="CEO dashboards"
                 className="h-12 gap-2"
               >
-                {dashboards.map((item) => {
+                {visibleDashboards.map((item) => {
                   const Icon = icons[item.icon]
                   return (
                     <TabsTrigger
@@ -337,7 +362,7 @@ export function Dashboard({
                       className="flex-none gap-2 px-3"
                     >
                       <Icon className="size-4" />
-                      {item.title}
+                      {t(item.title)}
                     </TabsTrigger>
                   )
                 })}
@@ -349,7 +374,10 @@ export function Dashboard({
               aria-label="Scroll dashboard tabs right"
               disabled={!scroll.right}
               onClick={() =>
-                nav.current?.scrollBy({ left: 400, behavior: "smooth" })
+                nav.current?.scrollBy({
+                  left: locale === "ar" ? -400 : 400,
+                  behavior: "smooth",
+                })
               }
             >
               <ChevronRight />
@@ -360,7 +388,7 @@ export function Dashboard({
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm">
             <p className="text-muted-foreground">
               <span className="font-medium text-foreground">
-                Dashboard data setup pending.
+                {t("Dashboard data setup pending.")}
               </span>{" "}
               Your company data will appear as each dashboard is connected.
             </p>
@@ -368,7 +396,7 @@ export function Dashboard({
               <span
                 className={`size-1.5 rounded-full ${context ? "bg-emerald-500" : "bg-muted-foreground/50"}`}
               />
-              {context ? "ERPNext connected" : "ERPNext ready to connect"}
+              {context ? t("ERPNext connected") : t("ERPNext ready to connect")}
             </Badge>
           </div>
           {(connectionError || error) && (
@@ -376,7 +404,7 @@ export function Dashboard({
               role="alert"
               className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-800 dark:text-amber-300"
             >
-              {connectionError || error}
+              {t(connectionError || error || "")}
               {error && visibleData.status === "ready" && (
                 <span className="block pt-1 text-xs">
                   Showing the last successful data for {visibleData.company}.
@@ -390,23 +418,23 @@ export function Dashboard({
                 {context?.company || config.companyName} / Dashboards
               </p>
               <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">
-                {definition.title}
+                {t(definition.title)}
               </h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                {definition.description}
+                {t(definition.description)}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
                 <select
-                  aria-label="Choose dashboard"
+                  aria-label={t("Choose dashboard")}
                   className="h-9 max-w-full appearance-none rounded-md border bg-background py-1 pl-3 pr-8 text-sm shadow-xs"
                   value={active}
                   onChange={(event) => navigate(event.target.value)}
                 >
-                  {dashboards.map((item) => (
+                  {visibleDashboards.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.title}
+                      {t(item.title)}
                     </option>
                   ))}
                 </select>
@@ -414,7 +442,7 @@ export function Dashboard({
               </div>
               {context && context.companies.length > 1 && (
                 <select
-                  aria-label="Select company"
+                  aria-label={t("Select company")}
                   className="h-9 max-w-48 rounded-md border bg-background px-3 text-sm"
                   value={context.company}
                   onChange={(event) => void connect(event.target.value)}
@@ -427,14 +455,14 @@ export function Dashboard({
                 </select>
               )}
               <select
-                aria-label="Reporting period"
+                aria-label={t("Reporting period")}
                 className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
                 value={days}
                 onChange={(event) => setDays(Number(event.target.value))}
               >
-                <option value={30}>Last 30 days</option>
-                <option value={90}>Last 90 days</option>
-                <option value={365}>Last 12 months</option>
+                <option value={30}>{t("Last 30 days")}</option>
+                <option value={90}>{t("Last 90 days")}</option>
+                <option value={365}>{t("Last 12 months")}</option>
               </select>
               <Button
                 variant="outline"
@@ -448,7 +476,7 @@ export function Dashboard({
                 ) : (
                   <RefreshCw />
                 )}
-                {busy ? "Refreshing…" : "Refresh"}
+                {busy ? t("Refreshing…") : t("Refresh")}
               </Button>
             </div>
           </div>
@@ -458,14 +486,22 @@ export function Dashboard({
             </span>
             <span role="status" aria-live="polite">
               {busy
-                ? "Loading dashboard…"
+                ? t("Loading dashboard…")
                 : visibleData.updatedAt
                   ? `Last updated ${new Date(visibleData.updatedAt).toLocaleTimeString("en", { timeZone: config.timezone, hour: "2-digit", minute: "2-digit" })}`
-                  : "Awaiting your data source"}
+                  : t("Awaiting your data source")}
             </span>
           </div>
-          {dashboards.map((item) => (
+          {visibleDashboards.map((item) => (
             <TabsContent key={item.id} value={item.id}>
+              {item.id === "approvals" && context && (
+                <div className="mb-6">
+                  <ApprovalInbox
+                    key={context.company}
+                    company={context.company}
+                  />
+                </div>
+              )}
               <DashboardPanel definition={item} data={visibleData} />
             </TabsContent>
           ))}

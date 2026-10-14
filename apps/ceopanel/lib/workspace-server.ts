@@ -1,6 +1,7 @@
 import "server-only"
 import { loadContext, type DashboardContext } from "./dashboard-server"
 import { ERPNextError } from "./erpnext-client"
+import { configuredWorkspace } from "./platform/erp-adapters"
 import {
   pendingSchema,
   requiredValues,
@@ -18,36 +19,38 @@ export type WorkspaceAdapter = {
   schema: (context: DashboardContext) => Promise<ModuleSchema>
   list: (
     context: DashboardContext,
-    query: { search: string; offset: number; limit: number }
+    query: { search: string; offset: number; limit: number },
   ) => Promise<{ records: WorkspaceRecord[]; hasMore: boolean }>
   get: (context: DashboardContext, name: string) => Promise<WorkspaceRecord>
   create?: (
     context: DashboardContext,
-    values: RecordValues
+    values: RecordValues,
   ) => Promise<WorkspaceRecord>
   update?: (
     context: DashboardContext,
     name: string,
     values: RecordValues,
-    expectedModified: string
+    expectedModified: string,
   ) => Promise<WorkspaceRecord>
   action?: (
     context: DashboardContext,
     name: string,
-    action: "submit" | "cancel",
-    expectedModified: string
+    action: string,
+    expectedModified: string,
   ) => Promise<WorkspaceRecord>
 }
 // Register these after the company supplies its API, custom fields, and workflows.
 // Each adapter must use the authenticated user's ERPNext permissions and check
 // field-level read access. Never fall back to a shared administrator token.
-export const customModules: WorkspaceModule[] = []
-export const workspaceAdapters: Record<string, WorkspaceAdapter> = {}
-export const customReports: ReportDefinition[] = []
+const configured = configuredWorkspace()
+export const customModules: WorkspaceModule[] = configured.modules
+export const workspaceAdapters: Record<string, WorkspaceAdapter> =
+  configured.adapters
+export const customReports: ReportDefinition[] = configured.reports
 export const reportAdapters: Record<
   string,
   (context: DashboardContext, filters: RecordValues) => Promise<ReportData>
-> = {}
+> = configured.reportAdapters
 export function workspaceCatalog() {
   return [...standardModules, ...customModules]
 }
@@ -60,12 +63,12 @@ function moduleFor(id: string) {
 function ensureCompany(
   record: WorkspaceRecord,
   schema: ModuleSchema,
-  company: string
+  company: string,
 ) {
   if (schema.companyField && record.values[schema.companyField] !== company)
     throw new ERPNextError(
       "This record does not belong to the selected company.",
-      403
+      403,
     )
 }
 async function authorized(id: string, company?: string) {
@@ -94,7 +97,7 @@ export async function workspaceSchema(id: string, company?: string) {
 export async function workspaceList(
   id: string,
   company: string | undefined,
-  query: { search: string; offset: number; limit: number }
+  query: { search: string; offset: number; limit: number },
 ) {
   if (
     !Number.isInteger(query.offset) ||
@@ -110,7 +113,7 @@ export async function workspaceList(
     throw new ERPNextError("Your account cannot read these records.", 403)
   const result = await adapter.list(context, query)
   result.records.forEach((record) =>
-    ensureCompany(record, schema, context.company)
+    ensureCompany(record, schema, context.company),
   )
   return result
 }
@@ -125,7 +128,7 @@ export async function workspaceGet(id: string, name: string, company?: string) {
 export async function workspaceSave(
   id: string,
   company: string | undefined,
-  input: { name?: string; values: unknown; modified?: string }
+  input: { name?: string; values: unknown; modified?: string },
 ) {
   const { adapter, context, schema } = await authorized(id, company)
   const permission = input.name ? "edit" : "create"
@@ -142,7 +145,7 @@ export async function workspaceSave(
     if (!input.modified || existing.modified !== input.modified)
       throw new ERPNextError(
         "This record changed in ERPNext. Reload it before saving.",
-        409
+        409,
       )
     if (existing.docstatus === 2)
       throw new ERPNextError("Cancelled records cannot be edited.", 409)
@@ -156,7 +159,7 @@ export async function workspaceSave(
   } catch (cause) {
     throw new ERPNextError(
       cause instanceof Error ? cause.message : "Invalid record values.",
-      400
+      400,
     )
   }
   const result = input.name
@@ -170,35 +173,39 @@ export async function workspaceAction(
   name: string,
   company: string | undefined,
   action: string,
-  modified: string
+  modified: string,
 ) {
-  if (action !== "submit" && action !== "cancel")
-    throw new ERPNextError("Unsupported document action.", 400)
   const { adapter, context, schema } = await authorized(id, company)
+  const workflow = !!schema.workflowActions?.includes(action)
+  if (!workflow && action !== "submit" && action !== "cancel")
+    throw new ERPNextError("Unsupported document action.", 400)
   if (
     !schema.permissions.read ||
-    !schema.submittable ||
-    !schema.permissions[action] ||
+    (workflow
+      ? !schema.permissions.edit
+      : !schema.submittable ||
+        !schema.permissions[action as "submit" | "cancel"]) ||
     !adapter.action
   )
     throw new ERPNextError(
       "Your account cannot perform this document action.",
-      403
+      403,
     )
   const existing = await adapter.get(context, name)
   ensureCompany(existing, schema, context.company)
   if (!modified || existing.modified !== modified)
     throw new ERPNextError(
       "This record changed in ERPNext. Reload it before continuing.",
-      409
+      409,
     )
   if (
-    (action === "submit" && (existing.docstatus ?? 0) !== 0) ||
-    (action === "cancel" && existing.docstatus !== 1)
+    (!workflow && action === "submit" && (existing.docstatus ?? 0) !== 0) ||
+    (!workflow && action === "cancel" && existing.docstatus !== 1) ||
+    (workflow && !existing.workflowActions?.includes(action))
   )
     throw new ERPNextError(
       "This action is unavailable in the record's current state.",
-      409
+      409,
     )
   const result = await adapter.action(context, name, action, modified)
   ensureCompany(result, schema, context.company)
@@ -207,7 +214,7 @@ export async function workspaceAction(
 export async function workspaceReport(
   id: string,
   company: string | undefined,
-  filters: unknown
+  filters: unknown,
 ) {
   const report = customReports.find((item) => item.id === id)
   const adapter = Object.hasOwn(reportAdapters, id)
@@ -224,7 +231,7 @@ export async function workspaceReport(
   } catch (cause) {
     throw new ERPNextError(
       cause instanceof Error ? cause.message : "Invalid report filters.",
-      400
+      400,
     )
   }
   return adapter(context, values)

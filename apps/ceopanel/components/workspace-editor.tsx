@@ -1,4 +1,5 @@
 "use client"
+import { useLocale } from "./locale-provider"
 import { useEffect, useState } from "react"
 import { LoaderCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -10,27 +11,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { WorkspaceFields } from "./workspace-fields"
+import { editableValues } from "@/lib/workspace"
 import type {
   Field,
   ModuleSchema,
   RecordValues,
   WorkspaceRecord,
 } from "@/lib/workspace"
-
-function editableValues(fields: Field[], values: RecordValues): RecordValues {
-  return Object.fromEntries(
-    fields
-      .filter((field) => !field.readOnly && values[field.name] !== undefined)
-      .map((field) => [
-        field.name,
-        field.type === "table" && Array.isArray(values[field.name])
-          ? (values[field.name] as RecordValues[]).map((row) =>
-              editableValues(field.fields ?? [], row)
-            )
-          : values[field.name],
-      ])
-  )
-}
 
 export function WorkspaceEditor({
   open,
@@ -47,6 +34,7 @@ export function WorkspaceEditor({
   company?: string
   onSaved: () => Promise<void>
 }) {
+  const { t, locale } = useLocale()
   const submitted = record?.docstatus === 1
   const fields = schema.fields.map((field) => ({
     ...field,
@@ -60,7 +48,7 @@ export function WorkspaceEditor({
   const [values, setValues] = useState<RecordValues>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [action, setAction] = useState<"submit" | "cancel" | null>(null)
+  const [action, setAction] = useState<string | null>(null)
   useEffect(() => {
     setValues(record?.values ?? {})
     setError(null)
@@ -82,7 +70,7 @@ export function WorkspaceEditor({
             values: editableValues(fields, values),
             modified: record?.modified,
           }),
-        }
+        },
       )
       const body = await response.json()
       if (!response.ok)
@@ -93,7 +81,7 @@ export function WorkspaceEditor({
       setError(
         cause instanceof Error
           ? cause.message
-          : "The record could not be saved."
+          : "The record could not be saved.",
       )
     } finally {
       setBusy(false)
@@ -110,7 +98,7 @@ export function WorkspaceEditor({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action, modified: record.modified }),
-        }
+        },
       )
       const body = await response.json()
       if (!response.ok)
@@ -121,7 +109,7 @@ export function WorkspaceEditor({
       setError(
         cause instanceof Error
           ? cause.message
-          : "This action could not be completed."
+          : "This action could not be completed.",
       )
     } finally {
       setBusy(false)
@@ -140,17 +128,21 @@ export function WorkspaceEditor({
             {record ? record.name : `New ${schema.module.doctype}`}
           </DialogTitle>
           <DialogDescription>
-            {schema.module.title}
+            {t(schema.module.title)}
             {record
-              ? ` · ${record.docstatus === 1 ? "Submitted" : record.docstatus === 2 ? "Cancelled" : "Draft"}`
+              ? ` · ${record.docstatus === 1 ? t("Submitted") : record.docstatus === 2 ? t("Cancelled") : t("Draft")}`
               : " · Create a company record"}
           </DialogDescription>
         </DialogHeader>
         {action ? (
           <div className="space-y-4">
             <p className="text-sm">
-              {action === "submit" ? "Submit" : "Cancel"} {record?.name} in
-              ERPNext?
+              {action === "submit"
+                ? t("Submit")
+                : action === "cancel"
+                  ? t("Cancel")
+                  : t(action)}{" "}
+              {record?.name} in ERPNext?
             </p>
             <div className="flex gap-2">
               <Button
@@ -160,31 +152,48 @@ export function WorkspaceEditor({
               >
                 {busy && <LoaderCircle className="animate-spin" />}
                 {action === "submit"
-                  ? "Confirm submit"
-                  : "Confirm cancellation"}
+                  ? t("Confirm submit")
+                  : action === "cancel"
+                    ? t("Confirm cancellation")
+                    : t(action!)}
               </Button>
               <Button
                 variant="outline"
                 disabled={busy}
                 onClick={() => setAction(null)}
               >
-                Back to record
+                {t("Back to record")}
               </Button>
             </div>
           </div>
         ) : (
           <form className="space-y-5" onSubmit={save}>
             <WorkspaceFields
+              moduleId={schema.module.id}
+              company={company}
               fields={fields}
               values={values}
               onChange={setValues}
               disabled={busy || !canSave}
             />
             <div className="flex flex-wrap items-center gap-2">
+              {record?.workflowActions
+                ?.filter((name) => schema.workflowActions?.includes(name))
+                .map((name) => (
+                  <Button
+                    key={name}
+                    type="button"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => setAction(name)}
+                  >
+                    {t(name)}
+                  </Button>
+                ))}
               {canSave && (
                 <Button type="submit" disabled={busy}>
                   {busy && <LoaderCircle className="animate-spin" />}
-                  {record ? "Save changes" : "Create record"}
+                  {record ? t("Save changes") : t("Create record")}
                 </Button>
               )}
               {record &&
@@ -197,7 +206,7 @@ export function WorkspaceEditor({
                     disabled={busy}
                     onClick={() => setAction("submit")}
                   >
-                    Submit
+                    {t("Submit")}
                   </Button>
                 )}
               {record &&
@@ -210,7 +219,7 @@ export function WorkspaceEditor({
                     disabled={busy}
                     onClick={() => setAction("cancel")}
                   >
-                    Cancel document
+                    {t("Cancel document")}
                   </Button>
                 )}
               <Button
@@ -219,14 +228,14 @@ export function WorkspaceEditor({
                 disabled={busy}
                 onClick={() => onOpenChange(false)}
               >
-                Close
+                {t("Close")}
               </Button>
             </div>
           </form>
         )}
         {error && (
           <p role="alert" className="text-sm text-destructive">
-            {error}
+            {t(error)}
           </p>
         )}
       </DialogContent>

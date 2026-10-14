@@ -1,4 +1,5 @@
 "use client"
+import { useLocale } from "./locale-provider"
 import { useEffect, useState } from "react"
 import { BarChart3, Download, Search } from "lucide-react"
 import {
@@ -35,18 +36,18 @@ import type {
 } from "@/lib/dashboards"
 import { downloadCSV } from "./records-table"
 
-function formatMetric(metric: MetricValue, currency: string) {
+function formatMetric(metric: MetricValue, currency: string, locale: string) {
   if (metric.value === null) return "—"
   if (typeof metric.value === "string") return metric.value
   if (metric.format === "currency")
-    return new Intl.NumberFormat("en", {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
       maximumFractionDigits: 0,
     }).format(metric.value)
   if (metric.format === "percent")
-    return `${metric.value.toLocaleString("en")}%`
-  return metric.value.toLocaleString("en")
+    return `${metric.value.toLocaleString(locale)}%`
+  return metric.value.toLocaleString(locale)
 }
 
 export function DashboardPanel({
@@ -56,6 +57,7 @@ export function DashboardPanel({
   definition: DashboardDefinition
   data: DashboardData
 }) {
+  const { t, locale } = useLocale()
   const ready = data.status === "ready"
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
@@ -67,8 +69,8 @@ export function DashboardPanel({
     data.table.columns.some((column) =>
       String(row[column.key] ?? "")
         .toLowerCase()
-        .includes(search.trim().toLowerCase())
-    )
+        .includes(search.trim().toLowerCase()),
+    ),
   )
   const totalPages = Math.max(1, Math.ceil(rows.length / 10))
   const currentPage = Math.min(page, totalPages - 1)
@@ -77,7 +79,7 @@ export function DashboardPanel({
       [data.company, definition.title, data.period.from, data.period.to],
       data.table.columns.map((column) => column.label),
       ...rows.map((row) =>
-        data.table.columns.map((column) => row[column.key] ?? "")
+        data.table.columns.map((column) => row[column.key] ?? ""),
       ),
     ])
   return (
@@ -89,12 +91,12 @@ export function DashboardPanel({
             className="gap-3 bg-gradient-to-t from-muted/40 to-card shadow-xs"
           >
             <CardHeader className="gap-3">
-              <CardDescription>{metric.label}</CardDescription>
+              <CardDescription>{t(metric.label)}</CardDescription>
               <CardTitle className="text-3xl font-semibold tabular-nums">
-                {formatMetric(metric, data.currency)}
+                {formatMetric(metric, data.currency, locale)}
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                {ready ? metric.note || "Company data" : "Awaiting data"}
+                {ready ? metric.note || "Company data" : t("Awaiting data")}
               </p>
             </CardHeader>
           </Card>
@@ -103,15 +105,15 @@ export function DashboardPanel({
       <Card className="gap-4">
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div className="space-y-1.5">
-            <CardTitle>{data.chart.title}</CardTitle>
+            <CardTitle>{t(data.chart.title)}</CardTitle>
             <CardDescription>
               {ready
-                ? "Performance in the selected reporting period"
-                : "Your dashboard chart will appear here"}
+                ? t("Performance in the selected reporting period")
+                : t("Your dashboard chart will appear here")}
             </CardDescription>
           </div>
           <Badge variant="outline" className="font-normal">
-            {ready ? "Connected" : "Data source pending"}
+            {ready ? t("Connected") : t("Data source pending")}
           </Badge>
         </CardHeader>
         <CardContent>
@@ -156,13 +158,17 @@ export function DashboardPanel({
               </span>
               <p className="text-sm font-medium">
                 {ready
-                  ? "No chart data in this period"
-                  : "Ready for your company data"}
+                  ? t("No chart data in this period")
+                  : t("Ready for your company data")}
               </p>
               <p className="max-w-sm px-4 text-xs leading-relaxed text-muted-foreground">
                 {ready
-                  ? "Choose another reporting period to review more activity."
-                  : "The source and calculations will be connected when you share how this dashboard gets its data."}
+                  ? t(
+                      "Choose another reporting period to review more activity.",
+                    )
+                  : t(
+                      "The source and calculations will be connected when you share how this dashboard gets its data.",
+                    )}
               </p>
             </div>
           )}
@@ -171,19 +177,21 @@ export function DashboardPanel({
       <Card className="gap-0 overflow-hidden">
         <CardHeader className="flex flex-col justify-between gap-4 pb-5 md:flex-row md:items-center">
           <div className="space-y-1.5">
-            <CardTitle>{definition.title} records</CardTitle>
+            <CardTitle>
+              {t(definition.title)} {t("records")}
+            </CardTitle>
             <CardDescription>
               {ready
                 ? `${rows.length} records in this view`
-                : "Record layout prepared · data setup pending"}
+                : t("Record layout prepared · data setup pending")}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
               <Input
-                aria-label="Search dashboard records"
-                placeholder="Search records…"
+                aria-label={t("Search dashboard records")}
+                placeholder={t("Search records…")}
                 className="h-9 pl-8 md:w-48"
                 value={search}
                 disabled={!ready}
@@ -200,7 +208,7 @@ export function DashboardPanel({
               onClick={exportRows}
             >
               <Download />
-              Export
+              {t("Export")}
             </Button>
           </div>
         </CardHeader>
@@ -210,7 +218,7 @@ export function DashboardPanel({
               <TableRow>
                 {data.table.columns.map((column) => (
                   <TableHead key={column.key} className="first:pl-6">
-                    {column.label}
+                    {t(column.label)}
                   </TableHead>
                 ))}
               </TableRow>
@@ -233,14 +241,16 @@ export function DashboardPanel({
           {(!ready || rows.length === 0) && (
             <div className="px-6 py-10 text-center text-sm text-muted-foreground">
               {ready
-                ? "No records in this view."
-                : "Awaiting your data source. No company records have been loaded for this dashboard."}
+                ? t("No records in this view.")
+                : t(
+                    "Awaiting your data source. No company records have been loaded for this dashboard.",
+                  )}
             </div>
           )}
           {ready && rows.length > 10 && (
             <div className="flex items-center justify-between border-t px-6 py-3 text-xs text-muted-foreground">
               <span>
-                Page {currentPage + 1} of {totalPages}
+                {t("Page")} {currentPage + 1} {t("of")} {totalPages}
               </span>
               <div className="flex gap-2">
                 <Button
@@ -249,7 +259,7 @@ export function DashboardPanel({
                   disabled={currentPage === 0}
                   onClick={() => setPage(currentPage - 1)}
                 >
-                  Previous
+                  {t("Previous")}
                 </Button>
                 <Button
                   variant="outline"
@@ -257,7 +267,7 @@ export function DashboardPanel({
                   disabled={currentPage + 1 >= totalPages}
                   onClick={() => setPage(currentPage + 1)}
                 >
-                  Next
+                  {t("Next")}
                 </Button>
               </div>
             </div>

@@ -1,5 +1,7 @@
 "use client"
+import { useLocale } from "./locale-provider"
 import Link from "next/link"
+import { PlatformLinks } from "./platform-links"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   Building2,
@@ -59,6 +61,7 @@ export function ERPWorkspace({
   initialError: string | null
   config: { companyName: string; siteUrl: string }
 }) {
+  const { t, locale } = useLocale()
   const [context, setContext] = useState(initial)
   const [mode, setMode] = useState("records")
   const [selected, setSelected] = useState(modules[0].id)
@@ -97,7 +100,7 @@ export function ERPWorkspace({
       const target = modules.find((item) => item.id === id)
       if (target) {
         setSelected(target.id)
-        setMode(target.custom ? "custom" : "records")
+        setMode(target.custom ? "custom" : t("records"))
       }
     }
     follow()
@@ -151,7 +154,7 @@ export function ERPWorkspace({
         setError(
           cause instanceof Error
             ? cause.message
-            : "Records could not be loaded."
+            : "Records could not be loaded.",
         )
     } finally {
       if (token === requestId.current) setBusy(false)
@@ -204,7 +207,7 @@ export function ERPWorkspace({
     try {
       const response = await fetch(
         `/api/erpnext/context${company ? `?company=${encodeURIComponent(company)}` : ""}`,
-        { cache: "no-store" }
+        { cache: "no-store" },
       )
       const body = await response.json()
       if (!response.ok) throw new Error(body.error || "Connection failed.")
@@ -250,7 +253,7 @@ export function ERPWorkspace({
     try {
       const response = await fetch(
         `${base}/records/${encodeURIComponent(name)}?${companyQuery}`,
-        { cache: "no-store" }
+        { cache: "no-store" },
       )
       const body = await response.json()
       if (!response.ok)
@@ -263,7 +266,7 @@ export function ERPWorkspace({
         setError(
           cause instanceof Error
             ? cause.message
-            : "The record could not be opened."
+            : "The record could not be opened.",
         )
     } finally {
       if (token === operationId.current) setBusy(false)
@@ -283,7 +286,7 @@ export function ERPWorkspace({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filters }),
-        }
+        },
       )
       const body = await response.json()
       if (!response.ok)
@@ -294,13 +297,13 @@ export function ERPWorkspace({
         setError(
           cause instanceof Error
             ? cause.message
-            : "The report could not be loaded."
+            : "The report could not be loaded.",
         )
     } finally {
       if (token === operationId.current) setBusy(false)
     }
   }
-  const stateText = ready ? "ERPNext connected" : "Awaiting API setup"
+  const stateText = ready ? t("ERPNext connected") : t("Awaiting API setup")
   return (
     <div className="min-h-screen">
       <header className="border-b">
@@ -314,22 +317,22 @@ export function ERPWorkspace({
                 {config.companyName}
               </span>
               <span className="block text-[11px] text-muted-foreground">
-                ERP workspace
+                {t("ERP workspace")}
               </span>
             </span>
           </Link>
           <div className="flex shrink-0 gap-2">
             <Button asChild variant="outline" size="sm">
-              <Link href="/" aria-label="Return to CEO dashboards">
+              <Link href="/" aria-label={t("Return to CEO dashboards")}>
                 <LayoutDashboard />
-                <span className="hidden sm:inline">CEO Dashboards</span>
+                <span className="hidden sm:inline">{t("CEO Dashboards")}</span>
               </Link>
             </Button>
             {context ? (
               <Button
                 variant="outline"
                 size="sm"
-                aria-label="Sign out"
+                aria-label={t("Sign out")}
                 disabled={busy}
                 onClick={signOut}
               >
@@ -337,27 +340,35 @@ export function ERPWorkspace({
               </Button>
             ) : (
               <Button size="sm" onClick={() => setConnectOpen(true)}>
-                Connect ERPNext
+                {t("Connect ERPNext")}
               </Button>
             )}
           </div>
         </div>
+        <PlatformLinks />
       </header>
       <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Company ERP workspace
+            {t("Company ERP workspace")}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Manage company records and run reports from the same platform.
+            {t(
+              "Manage company records and run reports from the same platform.",
+            )}
           </p>
         </div>
-        <Tabs value={mode} onValueChange={chooseMode} className="gap-5">
+        <Tabs
+          dir={locale === "ar" ? "rtl" : "ltr"}
+          value={mode}
+          onValueChange={chooseMode}
+          className="gap-5"
+        >
           <div className="overflow-x-auto">
-            <TabsList aria-label="ERP workspace sections">
-              <TabsTrigger value="records">Company records</TabsTrigger>
-              <TabsTrigger value="custom">Custom DocTypes</TabsTrigger>
-              <TabsTrigger value="reports">Custom reports</TabsTrigger>
+            <TabsList aria-label={t("ERP workspace sections")}>
+              <TabsTrigger value="records">{t("Company records")}</TabsTrigger>
+              <TabsTrigger value="custom">{t("Custom DocTypes")}</TabsTrigger>
+              <TabsTrigger value="reports">{t("Custom reports")}</TabsTrigger>
             </TabsList>
           </div>
           {error && (
@@ -365,7 +376,7 @@ export function ERPWorkspace({
               role="alert"
               className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-300"
             >
-              {error}
+              {t(error)}
             </p>
           )}
           {(mode === "records" || (mode === "custom" && custom.length > 0)) && (
@@ -373,20 +384,20 @@ export function ERPWorkspace({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
                   <select
-                    aria-label="Choose record type"
+                    aria-label={t("Choose record type")}
                     className="h-9 rounded-md border bg-background px-3 text-sm"
                     value={selected}
                     onChange={(event) => chooseModule(event.target.value)}
                   >
                     {shownModules.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.title}
+                        {t(item.title)}
                       </option>
                     ))}
                   </select>
                   {context && context.companies.length > 1 && (
                     <select
-                      aria-label="Select company"
+                      aria-label={t("Select company")}
                       className="h-9 max-w-52 rounded-md border bg-background px-3 text-sm"
                       value={context.company}
                       onChange={(event) => void connect(event.target.value)}
@@ -399,7 +410,7 @@ export function ERPWorkspace({
                     </select>
                   )}
                   <Badge variant="outline" className="font-normal">
-                    {stateText}
+                    {t(stateText)}
                   </Badge>
                 </div>
                 <div className="flex gap-2">
@@ -430,21 +441,21 @@ export function ERPWorkspace({
                     }}
                   >
                     <Plus />
-                    New record
+                    {t("New record")}
                   </Button>
                 </div>
               </div>
               <Card className="gap-0 overflow-hidden">
                 <CardHeader className="flex flex-col justify-between gap-4 pb-5 md:flex-row md:items-center">
                   <div className="space-y-1.5">
-                    <CardTitle>{module.title}</CardTitle>
-                    <CardDescription>{module.description}</CardDescription>
+                    <CardTitle>{t(module.title)}</CardTitle>
+                    <CardDescription>{t(module.description)}</CardDescription>
                   </div>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
                     <Input
                       aria-label="Search ERP records"
-                      placeholder="Search records…"
+                      placeholder={t("Search records…")}
                       value={search}
                       disabled={!ready}
                       onChange={(event) => {
@@ -461,7 +472,7 @@ export function ERPWorkspace({
                       <TableRow>
                         {effectiveSchema.columns.map((column) => (
                           <TableHead key={column.key} className="first:pl-6">
-                            {column.label}
+                            {t(column.label)}
                           </TableHead>
                         ))}
                         <TableHead>
@@ -486,14 +497,14 @@ export function ERPWorkspace({
                                   {String(
                                     column.key === "name"
                                       ? row.name
-                                      : (row.values[column.key] ?? row.name)
+                                      : (row.values[column.key] ?? row.name),
                                   )}
                                 </button>
                               ) : (
                                 String(
                                   column.key === "modified"
                                     ? row.modified
-                                    : (row.values[column.key] ?? "—")
+                                    : (row.values[column.key] ?? "—"),
                                 )
                               )}
                             </TableCell>
@@ -537,7 +548,7 @@ export function ERPWorkspace({
                           disabled={offset === 0 || busy}
                           onClick={() => setOffset(offset - 20)}
                         >
-                          Previous
+                          {t("Previous")}
                         </Button>
                         <Button
                           variant="outline"
@@ -545,7 +556,7 @@ export function ERPWorkspace({
                           disabled={!hasMore || busy}
                           onClick={() => setOffset(offset + 20)}
                         >
-                          Next
+                          {t("Next")}
                         </Button>
                       </div>
                     </div>
@@ -558,7 +569,7 @@ export function ERPWorkspace({
             {custom.length === 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Custom DocTypes</CardTitle>
+                  <CardTitle>{t("Custom DocTypes")}</CardTitle>
                   <CardDescription>
                     Your custom company records can be managed here with their
                     own fields and workflows.
@@ -576,7 +587,7 @@ export function ERPWorkspace({
             {activeReport ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Custom reports</CardTitle>
+                  <CardTitle>{t("Custom reports")}</CardTitle>
                   <CardDescription>
                     Choose a report and set its filters.
                   </CardDescription>
@@ -618,7 +629,7 @@ export function ERPWorkspace({
             ) : (
               <Card>
                 <CardHeader>
-                  <CardTitle>Custom reports</CardTitle>
+                  <CardTitle>{t("Custom reports")}</CardTitle>
                   <CardDescription>
                     Query reports, script reports, and company-specific
                     reporting.
@@ -645,14 +656,14 @@ export function ERPWorkspace({
                         reportData.columns.map((column) => column.label),
                         ...reportData.rows.map((row) =>
                           reportData.columns.map(
-                            (column) => row[column.key] ?? ""
-                          )
+                            (column) => row[column.key] ?? "",
+                          ),
                         ),
                       ])
                     }
                   >
                     <Download />
-                    Export
+                    {t("Export")}
                   </Button>
                 </CardHeader>
                 <CardContent className="px-0">
@@ -661,7 +672,7 @@ export function ERPWorkspace({
                       <TableRow>
                         {reportData.columns.map((column) => (
                           <TableHead key={column.key} className="first:pl-6">
-                            {column.label}
+                            {t(column.label)}
                           </TableHead>
                         ))}
                       </TableRow>

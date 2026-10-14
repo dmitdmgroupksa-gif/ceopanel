@@ -6,6 +6,7 @@ const root = path.dirname(fileURLToPath(import.meta.url))
 const config: NextConfig = {
   output: "standalone",
   devIndicators: false,
+  serverExternalPackages: ["bullmq", "pg", "pdf-parse", "exceljs"],
   outputFileTracingRoot: root,
   turbopack: { root },
   async headers() {

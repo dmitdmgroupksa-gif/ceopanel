@@ -1,0 +1,35 @@
+{
+  "environment": "staging",
+  "aiDataApproved": false,
+  "modules": [
+    {
+      "id": "customers",
+      "title": "Customers",
+      "doctype": "Customer",
+      "description": "Customer master records; verify shared-company policy in staging.",
+      "fields": [
+        { "name": "customer_name", "label": "Customer", "type": "text", "required": true },
+        { "name": "customer_group", "label": "Customer group", "type": "link" },
+        { "name": "territory", "label": "Territory", "type": "link" }
+      ],
+      "aiFields": ["customer_name", "customer_group", "territory"],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    }
+  ],
+  "agents": {
+    "sales": { "roles": ["Sales User", "Sales Manager"], "modules": ["customers"], "approvers": [] },
+    "finance": { "roles": ["Accounts User", "Accounts Manager"], "modules": [], "approvers": [] },
+    "inventory": { "roles": ["Stock User", "Stock Manager"], "modules": [], "approvers": [] },
+    "procurement": { "roles": ["Purchase User", "Purchase Manager"], "modules": [], "approvers": [] },
+    "logistics": { "roles": ["Stock User", "Stock Manager"], "modules": [], "approvers": [] },
+    "hr": { "roles": ["HR User", "HR Manager"], "modules": [], "approvers": [] },
+    "facilities": { "roles": [], "modules": [], "approvers": [] },
+    "executive": { "roles": [], "modules": [], "approvers": [] }
+  },
+  "collections": [],
+  "reports": [],
+  "dashboards": {},
+  "channels": { "email": false, "whatsapp": false, "voice": false }
+}

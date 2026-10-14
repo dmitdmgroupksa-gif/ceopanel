@@ -1,0 +1,945 @@
+"use client"
+import { useCallback, useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import {
+  Bot,
+  BookOpen,
+  ShieldCheck,
+  Send,
+  Upload,
+  RefreshCw,
+  CircleCheck,
+  LoaderCircle,
+  Database,
+  Cable,
+  Bell,
+  FileText,
+} from "lucide-react"
+import { agents, type Proposal } from "@/lib/platform/catalog"
+import type { DashboardContext } from "@/lib/dashboard-server"
+import { Button } from "./ui/button"
+import { Input } from "./ui/input"
+import { Badge } from "./ui/badge"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card"
+import { PlatformLinks } from "./platform-links"
+import { useLocale } from "./locale-provider"
+import { LoginDialog } from "./login-dialog"
+import { VoiceInput, ReadAnswer } from "./voice-input"
+import { FieldUpdates } from "./field-updates"
+
+export type PlatformMode =
+  | "agents"
+  | "knowledge"
+  | "approvals"
+  | "notifications"
+  | "integrations"
+  | "field-updates"
+type Status = {
+  database: boolean
+  queue: boolean
+  ai: boolean
+  embeddings: boolean
+  environment: string
+  modules: number
+  agents: { id: string; configured: boolean }[]
+  channels: { email: boolean; whatsapp: boolean; voice: boolean }
+}
+type Run = {
+  id: string
+  agent: string
+  prompt: string
+  response: string
+  status: string
+  created_at: string
+}
+type Doc = {
+  id: string
+  title: string
+  collection: string
+  version: number
+  status: string
+  created_at: string
+}
+type Notice = {
+  id: string
+  title: string
+  href: string
+  read_at: string | null
+  created_at: string
+}
+type SearchResult = {
+  id: string
+  title: string
+  chunk: number
+  content: string
+  version: number
+}
+async function api<T>(
+  path: string,
+  company?: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await fetch(
+    `/api/platform/${path}${company ? `?company=${encodeURIComponent(company)}` : ""}`,
+    {
+      method: body ? "POST" : "GET",
+      cache: "no-store",
+      signal,
+      headers:
+        body && !(body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : undefined,
+      body:
+        body instanceof FormData
+          ? body
+          : body
+            ? JSON.stringify(body)
+            : undefined,
+    },
+  )
+  const result = await response.json()
+  if (!response.ok)
+    throw new Error(
+      result.error || "The ERPNext operation could not be completed.",
+    )
+  return result
+}
+export function ApprovalInbox({ company }: { company?: string }) {
+  const { t } = useLocale()
+  const [rows, setRows] = useState<
+      (Proposal & {
+        canReview: boolean
+        attachments?: { id: string; filename: string }[]
+      })[]
+    >([]),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState("")
+  const sequence = useRef(0)
+  const refresh = useCallback(async () => {
+    const id = ++sequence.current
+    setError("")
+    try {
+      const result = await api<
+        (Proposal & {
+          canReview: boolean
+          attachments?: { id: string; filename: string }[]
+        })[]
+      >("proposals", company)
+      if (id === sequence.current) setRows(result)
+    } catch (e) {
+      if (id === sequence.current) setError((e as Error).message)
+    }
+  }, [company])
+  useEffect(() => {
+    setRows([])
+    void refresh()
+    return () => {
+      ++sequence.current
+    }
+  }, [refresh])
+  async function decide(
+    row: Proposal,
+    decision: "approve" | "reject" | "reconcile",
+  ) {
+    setBusy(row.id)
+    setError("")
+    try {
+      await api(
+        decision === "reconcile" ? "proposals/reconcile" : "proposals/review",
+        company,
+        decision === "reconcile"
+          ? { id: row.id }
+          : { id: row.id, revision: row.revision, decision },
+      )
+      await refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy("")
+    }
+  }
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          {t(
+            "Review the exact change and evidence before approving. Native ERP workflows still apply.",
+          )}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void refresh()}>
+          <RefreshCw />
+          {t("Refresh")}
+        </Button>
+      </div>
+      {error && (
+        <p
+          role="alert"
+          className="rounded-md border border-amber-500/30 p-3 text-sm"
+        >
+          {t(error)}
+        </p>
+      )}
+      {!rows.length && !error && <Empty label="No proposals yet." />}
+      {rows.map((row) => (
+        <Card key={row.id}>
+          <CardHeader>
+            <div className="flex flex-wrap justify-between gap-2">
+              <CardTitle className="text-base">
+                {row.department} · {row.payload.kind} · {row.payload.module}
+              </CardTitle>
+              <Badge variant="outline">{t(row.status)}</Badge>
+            </div>
+            <CardDescription>
+              {row.payload.name || row.id} · {row.proposer} ·{" "}
+              {new Date(row.created_at).toLocaleString()}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <dl className="grid gap-2 rounded-md border bg-muted/20 p-4 text-sm">
+              {Object.entries(row.payload).map(([key, value]) => (
+                <div key={key} className="grid gap-1 sm:grid-cols-[120px_1fr]">
+                  <dt className="text-muted-foreground">{t(key)}</dt>
+                  <dd
+                    className="min-w-0 whitespace-pre-wrap break-words"
+                    dir="auto"
+                  >
+                    {typeof value === "object"
+                      ? JSON.stringify(value, null, 2)
+                      : String(value)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {row.attachments?.map((file) => (
+              <a
+                key={file.id}
+                className="block text-sm underline"
+                href={`/api/platform/attachments/${file.id}?company=${encodeURIComponent(row.company)}`}
+              >
+                {file.filename}
+              </a>
+            ))}
+            <details className="text-sm">
+              <summary className="cursor-pointer text-muted-foreground">
+                {t("Sources")}
+              </summary>
+              <pre
+                className="mt-2 max-h-72 overflow-auto rounded border p-3 text-xs"
+                dir="ltr"
+              >
+                {JSON.stringify(row.evidence, null, 2)}
+              </pre>
+            </details>
+            {row.canReview && row.status === "pending" && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  disabled={!!busy}
+                  onClick={() => void decide(row, "approve")}
+                >
+                  {busy === row.id ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <CircleCheck />
+                  )}
+                  {t("Approve and execute")}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!!busy}
+                  onClick={() => void decide(row, "reject")}
+                >
+                  {t("Reject")}
+                </Button>
+              </div>
+            )}
+            {row.canReview &&
+              ["executing", "needs_reconciliation"].includes(row.status) && (
+                <Button
+                  variant="outline"
+                  disabled={!!busy}
+                  onClick={() => void decide(row, "reconcile")}
+                >
+                  {t("Check ERP receipt")}
+                </Button>
+              )}
+          </CardContent>
+        </Card>
+      ))}
+    </section>
+  )
+}
+function Empty({ label }: { label: string }) {
+  const { t } = useLocale()
+  return (
+    <div className="rounded-lg border border-dashed bg-muted/20 p-10 text-center text-sm text-muted-foreground">
+      {t(label)}
+    </div>
+  )
+}
+export function PlatformPanel({
+  mode,
+  companyName,
+  siteUrl,
+}: {
+  mode: PlatformMode
+  companyName: string
+  siteUrl: string
+}) {
+  const { locale, t } = useLocale()
+  const [context, setContext] = useState<DashboardContext | null>(null),
+    [status, setStatus] = useState<Status | null>(null),
+    [login, setLogin] = useState(false)
+  const [selected, setSelected] = useState("executive"),
+    [available, setAvailable] = useState<string[]>([]),
+    [prompt, setPrompt] = useState(""),
+    [answer, setAnswer] = useState(""),
+    [sources, setSources] = useState<unknown[]>([])
+  const [runs, setRuns] = useState<Run[]>([]),
+    [docs, setDocs] = useState<Doc[]>([]),
+    [collections, setCollections] = useState<
+      { id: string; title: string; upload: boolean }[]
+    >([]),
+    [collection, setCollection] = useState(""),
+    [query, setQuery] = useState(""),
+    [results, setResults] = useState<SearchResult[]>([]),
+    [notices, setNotices] = useState<Notice[]>([]),
+    [inventory, setInventory] = useState<unknown>(null)
+  const [error, setError] = useState(""),
+    [busy, setBusy] = useState(false)
+  const [runId, setRunId] = useState("")
+  const token = useRef(0)
+  const title = {
+    agents: "Agents",
+    knowledge: "Knowledge",
+    approvals: "Approvals",
+    notifications: "Notifications",
+    integrations: "Integration setup",
+    "field-updates": "Field updates",
+  }[mode]
+  const active = agents.find((a) => a.id === selected)!
+  const company = context?.company
+  async function connect(company?: string) {
+    const response = await fetch(
+      `/api/erpnext/context${company ? `?company=${encodeURIComponent(company)}` : ""}`,
+      { cache: "no-store" },
+    )
+    const body = await response.json()
+    if (!response.ok) throw new Error(body.error)
+    setContext(body)
+  }
+  useEffect(() => {
+    void api<Status>("status")
+      .then(setStatus)
+      .catch(() => {})
+    void connect().catch(() => {})
+  }, [])
+  const refresh = useCallback(async () => {
+    const id = ++token.current
+    setError("")
+    setAnswer("")
+    setRunId("")
+    setSources([])
+    setResults([])
+    setRuns([])
+    setDocs([])
+    setNotices([])
+    setInventory(null)
+    setAvailable([])
+    setCollections([])
+    if (!company) return
+    try {
+      if (mode === "agents") {
+        const allowed = await api<
+          ((typeof agents)[number] & { available: boolean })[]
+        >("agents", company)
+        if (id === token.current)
+          setAvailable(allowed.filter((a) => a.available).map((a) => a.id))
+        const history = await api<Run[]>("runs", company)
+        if (id === token.current) setRuns(history)
+      }
+      if (mode === "knowledge") {
+        const data = await api<{
+          documents: Doc[]
+          collections: typeof collections
+        }>("knowledge", company)
+        if (id === token.current) {
+          setDocs(data.documents)
+          setCollections(data.collections)
+          setCollection(data.collections.find((c) => c.upload)?.id || "")
+        }
+      }
+      if (mode === "notifications") {
+        const data = await api<Notice[]>("notifications", company)
+        if (id === token.current) setNotices(data)
+      }
+    } catch (e) {
+      if (id === token.current) setError((e as Error).message)
+    }
+  }, [company, mode])
+  useEffect(() => {
+    void refresh()
+    return () => {
+      ++token.current
+    }
+  }, [refresh])
+  async function perform(operation: () => Promise<void>) {
+    const id = token.current
+    setBusy(true)
+    setError("")
+    try {
+      await operation()
+    } catch (e) {
+      if (id === token.current) setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const canRun = !!context && !!status?.ai && available.includes(selected)
+  return (
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
+          <Link href="/" className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Bot className="size-5" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold">{companyName}</span>
+              <span className="block text-xs text-muted-foreground">
+                {t("CEO management platform")}
+              </span>
+            </span>
+          </Link>
+          <div className="flex items-center gap-2">
+            {context ? (
+              <span className="hidden text-xs text-muted-foreground sm:block">
+                {context.user}
+              </span>
+            ) : (
+              <Button size="sm" onClick={() => setLogin(true)}>
+                {t("Connect ERPNext")}
+              </Button>
+            )}
+            <Badge variant="outline" className="hidden sm:flex">
+              <ShieldCheck className="size-3" />
+              {t("Human approval required")}
+            </Badge>
+          </div>
+        </div>
+        <PlatformLinks />
+      </header>
+      <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-7 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="mb-2 text-xs text-muted-foreground">
+              {company || companyName}
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {t(title)}
+            </h1>
+          </div>
+          {context && context.companies.length > 1 && (
+            <select
+              aria-label={t("Select company")}
+              disabled={busy}
+              value={company}
+              className="h-9 rounded-md border bg-background px-3 text-sm"
+              onChange={(e) => void perform(() => connect(e.target.value))}
+            >
+              {context.companies.map((c) => (
+                <option key={c.name}>{c.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        {!context && (
+          <Empty label="Sign in through the CEO dashboard to access company services." />
+        )}
+        {error && (
+          <div
+            role="alert"
+            className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
+          >
+            {t(error)}
+          </div>
+        )}
+        {mode === "agents" && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {agents.map((agent) => (
+                <button
+                  key={agent.id}
+                  onClick={() => {
+                    setSelected(agent.id)
+                    setAnswer("")
+                    setRunId("")
+                    setSources([])
+                  }}
+                  disabled={busy}
+                  aria-pressed={selected === agent.id}
+                  className={`rounded-xl border p-4 text-start transition hover:bg-muted/40 ${selected === agent.id ? "border-foreground bg-muted/30" : "bg-card"}`}
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <Bot className="size-5" />
+                    <Badge variant="outline" className="text-[10px]">
+                      {t(
+                        status?.ai && available.includes(agent.id)
+                          ? "Ready"
+                          : "Awaiting configuration",
+                      )}
+                    </Badge>
+                  </div>
+                  <p className="text-sm font-semibold">
+                    {locale === "ar" ? agent.ar : agent.name}
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    {locale === "ar" ? agent.descriptionAr : agent.description}
+                  </p>
+                </button>
+              ))}
+            </div>
+            <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Bot className="size-5" />
+                    {locale === "ar" ? active.ar : active.name}
+                  </CardTitle>
+                  <CardDescription>
+                    {t("Ask your department assistant")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {!canRun && (
+                    <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                      {t(
+                        "This assistant awaits role, source and OpenAI configuration.",
+                      )}
+                    </p>
+                  )}
+                  {answer && (
+                    <div
+                      className="whitespace-pre-wrap rounded-lg bg-muted/30 p-4 text-sm leading-7"
+                      dir="auto"
+                    >
+                      {answer}
+                    </div>
+                  )}
+                  {runId && (
+                    <ReadAnswer
+                      id={runId}
+                      company={company}
+                      disabled={!status?.channels.voice || busy}
+                      onError={setError}
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {t("Review the transcript before sending.")}
+                  </p>
+                  {sources.length > 0 && (
+                    <details>
+                      <summary className="cursor-pointer text-sm">
+                        {t("Sources")}
+                      </summary>
+                      <pre
+                        dir="ltr"
+                        className="mt-2 max-h-64 overflow-auto rounded border p-3 text-xs"
+                      >
+                        {JSON.stringify(sources, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const id = token.current
+                      void perform(async () => {
+                        const result = await api<{
+                          id: string
+                          answer: string
+                          evidence: unknown[]
+                        }>("agents/run", company, {
+                          agent: selected,
+                          prompt,
+                          language: locale,
+                        })
+                        if (id === token.current) {
+                          setAnswer(result.answer)
+                          setRunId(result.id)
+                          setSources(result.evidence)
+                          setPrompt("")
+                        }
+                      })
+                    }}
+                  >
+                    <label className="sr-only" htmlFor="agent-prompt">
+                      {t("Ask your department assistant")}
+                    </label>
+                    <textarea
+                      id="agent-prompt"
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      maxLength={12000}
+                      disabled={!canRun || busy}
+                      placeholder={t("Ask a question or request a draft…")}
+                      className="min-h-28 w-full resize-y rounded-md border bg-background p-3 text-sm"
+                    />
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <VoiceInput
+                        agent={selected}
+                        company={company}
+                        disabled={!canRun || busy || !status?.channels.voice}
+                        onTranscript={(value) =>
+                          setPrompt(value.slice(0, 12000))
+                        }
+                        onError={setError}
+                      />
+                      <Button disabled={!canRun || busy || !prompt.trim()}>
+                        {busy ? (
+                          <LoaderCircle className="animate-spin" />
+                        ) : (
+                          <Send />
+                        )}
+                        {t(busy ? "Working…" : "Send")}
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {t("Recent conversations")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {!runs.length && <Empty label="No conversations yet." />}
+                  {runs
+                    .filter((r) => r.agent === selected)
+                    .map((run) => (
+                      <button
+                        key={run.id}
+                        className="block w-full rounded-lg border p-3 text-start text-sm hover:bg-muted/30"
+                        onClick={() => {
+                          setAnswer(run.response || t(run.status))
+                          setRunId(run.id)
+                          setSources([])
+                        }}
+                      >
+                        <p className="line-clamp-2">{run.prompt}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {new Date(run.created_at).toLocaleString(locale)}
+                        </p>
+                      </button>
+                    ))}
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
+        {mode === "knowledge" && (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "Approved document collections only. Access follows your ERP roles.",
+              )}
+            </p>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Upload className="size-5" />
+                    {t("Upload")}
+                  </CardTitle>
+                  <CardDescription>
+                    {t("PDF, XLSX, CSV or text · maximum 10 MB")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form
+                    className="space-y-3"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const form = e.currentTarget
+                      const data = new FormData(form)
+                      void perform(async () => {
+                        await api("knowledge/upload", company, data)
+                        await refresh()
+                        form.reset()
+                      })
+                    }}
+                  >
+                    <label className="sr-only" htmlFor="collection">
+                      {t("Choose collection")}
+                    </label>
+                    <select
+                      id="collection"
+                      name="collection"
+                      required
+                      value={collection}
+                      onChange={(e) => setCollection(e.target.value)}
+                      className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                    >
+                      <option value="">{t("Choose collection")}</option>
+                      {collections
+                        .filter((c) => c.upload)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.title}
+                          </option>
+                        ))}
+                    </select>
+                    <Input
+                      aria-label={t("Choose document")}
+                      name="file"
+                      type="file"
+                      required
+                      accept=".pdf,.xlsx,.csv,.txt,.md"
+                    />
+                    <Button disabled={busy || !collection || !context}>
+                      <Upload />
+                      {t("Upload")}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <BookOpen className="size-5" />
+                    {t("Approved company knowledge")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form
+                    className="flex gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      void perform(async () =>
+                        setResults(
+                          await api("knowledge/search", company, { query }),
+                        ),
+                      )
+                    }}
+                  >
+                    <Input
+                      aria-label={t("Search")}
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      maxLength={1000}
+                      placeholder={t("Search")}
+                    />
+                    <Button
+                      disabled={
+                        !context || !query.trim() || busy || !status?.embeddings
+                      }
+                    >
+                      {t("Search")}
+                    </Button>
+                  </form>
+                  {results.map((r) => (
+                    <article
+                      key={`${r.id}-${r.chunk}`}
+                      className="mt-4 rounded-md border p-3 text-sm"
+                    >
+                      <p className="font-medium">
+                        {r.title} · v{r.version}
+                      </p>
+                      <p
+                        className="mt-2 whitespace-pre-wrap text-muted-foreground"
+                        dir="auto"
+                      >
+                        {r.content}
+                      </p>
+                    </article>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refresh()}
+              >
+                <RefreshCw />
+                {t("Refresh")}
+              </Button>
+            </div>
+            {!docs.length ? (
+              <Empty label="No documents yet." />
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {docs.map((doc) => (
+                  <Card key={doc.id}>
+                    <CardContent className="space-y-2 pt-5">
+                      <FileText className="size-5" />
+                      <p className="break-words text-sm font-medium">
+                        {doc.title}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {doc.collection} · v{doc.version}
+                      </p>
+                      <Badge variant="outline">{t(doc.status)}</Badge>
+                      {doc.status === "failed" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            void perform(async () => {
+                              await api("knowledge/retry", company, {
+                                id: doc.id,
+                              })
+                              await refresh()
+                            })
+                          }
+                        >
+                          {t("Retry indexing")}
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        {mode === "approvals" && context && (
+          <ApprovalInbox key={company} company={company} />
+        )}
+        {mode === "field-updates" && (
+          <FieldUpdates key={company} context={context} />
+        )}
+        {mode === "notifications" && (
+          <>
+            {!notices.length && <Empty label="No notifications yet." />}
+            {notices.map((n) => (
+              <Card key={n.id}>
+                <CardContent className="flex flex-wrap items-center justify-between gap-4 pt-5">
+                  <Link
+                    href={n.href}
+                    className="flex items-center gap-3 text-sm"
+                  >
+                    <Bell className="size-4" />
+                    {n.title}
+                  </Link>
+                  {!n.read_at && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        void perform(async () => {
+                          await api("notifications/read", company, { id: n.id })
+                          await refresh()
+                        })
+                      }
+                    >
+                      {t("Mark read")}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        )}
+        {mode === "integrations" && (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                {
+                  title: "Read-only sources",
+                  value: status?.modules || 0,
+                  Icon: Database,
+                },
+                { title: "Agents", value: 8, Icon: Bot },
+                {
+                  title: "Human approval required",
+                  value: t("Enabled"),
+                  Icon: ShieldCheck,
+                },
+                {
+                  title: "Staging first",
+                  value: status?.environment || "staging",
+                  Icon: Cable,
+                },
+              ].map((item) => (
+                <Card key={item.title}>
+                  <CardHeader>
+                    <CardDescription>{t(item.title)}</CardDescription>
+                    <CardTitle className="text-2xl">{item.value}</CardTitle>
+                  </CardHeader>
+                </Card>
+              ))}
+            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {t("Integration setup")}
+                </CardTitle>
+                <CardDescription>
+                  {t(
+                    "System Manager access is required to discover ERP metadata.",
+                  )}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    "Web portal",
+                    "Email",
+                    "WhatsApp",
+                    "Mobile",
+                    "Voice",
+                    "External systems",
+                  ].map((channel) => (
+                    <div
+                      key={channel}
+                      className="flex items-center justify-between rounded-md border p-3 text-sm"
+                    >
+                      <span>{t(channel)}</span>
+                      <Badge variant="outline">
+                        {t(channel === "Web portal" ? "Ready" : "Later phase")}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  disabled={!context || busy}
+                  variant="outline"
+                  onClick={() =>
+                    void perform(async () =>
+                      setInventory(await api("inventory", company)),
+                    )
+                  }
+                >
+                  {t("View discovery inventory")}
+                </Button>
+                {inventory != null && (
+                  <pre
+                    dir="ltr"
+                    className="max-h-96 overflow-auto rounded border p-4 text-xs"
+                  >
+                    {JSON.stringify(inventory, null, 2)}
+                  </pre>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </main>
+      <LoginDialog
+        open={login}
+        onOpenChange={setLogin}
+        siteUrl={siteUrl}
+        onConnected={() => connect()}
+      />
+    </div>
+  )
+}

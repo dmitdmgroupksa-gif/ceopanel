@@ -117,6 +117,7 @@ export type WorkspaceRecord = {
   modified: string
   docstatus?: number
   values: RecordValues
+  workflowActions?: string[]
 }
 export type Permissions = {
   read: boolean
@@ -133,6 +134,7 @@ export type ModuleSchema = {
   permissions: Permissions
   companyField?: string
   submittable: boolean
+  workflowActions?: string[]
 }
 export type ReportDefinition = {
   id: string
@@ -144,6 +146,26 @@ export type ReportDefinition = {
 export type ReportData = {
   columns: { key: string; label: string }[]
   rows: Record<string, string | number | null>[]
+}
+export function editableValues(
+  fields: Field[],
+  values: RecordValues,
+): RecordValues {
+  return Object.fromEntries(
+    fields
+      .filter((field) => !field.readOnly && values[field.name] !== undefined)
+      .map((field) => [
+        field.name,
+        field.type === "table" && Array.isArray(values[field.name])
+          ? (values[field.name] as RecordValues[]).map((row) => ({
+              ...editableValues(field.fields ?? [], row),
+              ...(typeof row._row_id === "string"
+                ? { _row_id: row._row_id }
+                : {}),
+            }))
+          : values[field.name],
+      ]),
+  )
 }
 
 export function pendingSchema(module: WorkspaceModule): ModuleSchema {
@@ -169,7 +191,7 @@ export function pendingSchema(module: WorkspaceModule): ModuleSchema {
 export function validateValues(
   values: unknown,
   fields: Field[],
-  submitted = false
+  submitted = false,
 ): RecordValues {
   if (!values || typeof values !== "object" || Array.isArray(values))
     throw new Error("Enter valid record fields.")
@@ -195,7 +217,18 @@ export function validateValues(
     if (field.type === "table") {
       if (!Array.isArray(value) || value.length > 200)
         throw new Error(`${field.label} must contain at most 200 rows.`)
-      output[name] = value.map((row) => validateValues(row, field.fields ?? []))
+      output[name] = value.map((row) => {
+        if (!row || typeof row !== "object" || Array.isArray(row))
+          throw new Error("Invalid child row.")
+        const { _row_id, ...fieldsOnly } = row as Record<string, unknown>
+        const result = validateValues(fieldsOnly, field.fields ?? [])
+        if (_row_id !== undefined) {
+          if (typeof _row_id !== "string" || !_row_id || _row_id.length > 140)
+            throw new Error("Invalid child row identity.")
+          result._row_id = _row_id
+        }
+        return result
+      })
     } else if (field.type === "check") {
       if (typeof value !== "boolean")
         throw new Error(`${field.label} must be checked or unchecked.`)

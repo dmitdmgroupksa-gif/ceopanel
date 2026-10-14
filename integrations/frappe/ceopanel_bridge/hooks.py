@@ -1,0 +1,6 @@
+app_name = "ceopanel_bridge"
+app_title = "CEO Panel Bridge"
+app_publisher = "Durar Masagh"
+app_description = "Validated CEO Panel integration"
+app_email = "admin@example.invalid"
+app_license = "MIT"

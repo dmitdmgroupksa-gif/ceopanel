@@ -73,3 +73,7 @@ npm start
 Open **http://localhost:3000**. The focused app has its own npm lockfile. Browser tests use Edge on Windows and Playwright Chromium on other systems (`npx playwright install chromium`). Tests cover all tabs, responsive layout, deep links, source readiness, ERPNext context, and a mocked future adapter's rendering/search/export behavior. Integration tests verify that unmapped dashboards make no external requests, adapter results stay within the selected company, and existing transport/session protections continue to work.
 
 Use HTTPS when hosting. Behind a reverse proxy, configure `CEOPANEL_ORIGIN` with the public origin, without a trailing slash. The application has not been deployed or connected to live dashboard data yet.
+# Enterprise platform
+
+See [PLATFORM.md](PLATFORM.md) for implemented services, staging activation, API contracts,
+channel gates and validation. Linux deployment is documented in [deploy/README.md](deploy/README.md).

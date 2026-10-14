@@ -1,11 +1,13 @@
 import { defineConfig, devices } from "@playwright/test"
+const port = Number(process.env.CEOPANEL_TEST_PORT || 3107)
 
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
-  timeout: 30000,
+  workers: 3,
+  timeout: 60000,
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: `http://localhost:${port}`,
     channel: process.platform === "win32" ? "msedge" : undefined,
     trace: "retain-on-failure",
   },
@@ -23,9 +25,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
+    command: `npx next dev --webpack --port ${port}`,
+    url: `http://localhost:${port}/agents`,
+    reuseExistingServer: false,
     timeout: 120000,
   },
 })

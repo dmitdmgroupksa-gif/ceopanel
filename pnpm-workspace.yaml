@@ -2,6 +2,7 @@ packages:
   - "apps/*"
   # The CEO app uses its own npm lockfile and ceo:* scripts.
   - "!apps/ceopanel"
+  - "!apps/ceopanel-mobile"
   - "packages/*"
   - "!**/test/**"
   - "!**/fixtures/**"

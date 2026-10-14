@@ -52,6 +52,11 @@ __screenshots__
 .codex-artifacts
 .registry-health
 .vercel
+.private-documents/
+platform.config.json
+backups/
+apps/ceopanel/deploy/.env
+__pycache__/
 .tmp*
 
 CONTEXT.md
