@@ -13,6 +13,8 @@ npm run dev
 
 Open **http://localhost:3000**. Each dashboard has its metric, chart, and record layout ready and displays **Awaiting data**. Data sources and calculations will be connected when the company supplies their mappings. Optional **Connect ERPNext** sign-in connects to **https://dmgroup.frappe.cloud** and loads only the user's permitted company context; it does not automatically assign dashboard data sources.
 
+The **ERP workspace** at **http://localhost:3000/workspace** prepares record browsing, creation/editing, and document actions for the listed company modules, plus custom DocTypes and reports. Live record actions await the company API setup. See [the ERP workspace integration guide](apps/ceopanel/ERP-WORKSPACE.md).
+
 ```sh
 npm run ceo:typecheck
 npm run ceo:test

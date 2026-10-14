@@ -1,4 +1,5 @@
 "use client"
+import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   ArrowLeftRight,
@@ -263,6 +264,15 @@ export function Dashboard({
               </span>
             </a>
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+              <Button asChild variant="outline" size="icon-sm">
+                <Link
+                  href="/workspace"
+                  aria-label="Open ERP workspace"
+                  title="ERP workspace"
+                >
+                  <Building2 />
+                </Link>
+              </Button>
               <Badge
                 variant="outline"
                 className="hidden font-normal md:inline-flex"

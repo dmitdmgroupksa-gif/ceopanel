@@ -27,6 +27,10 @@ The order follows the company screenshot. Expanded names were confirmed by the u
 
 All 18 screens are ready for data setup. Each has editable metric labels, a chart slot, record columns, reporting-period controls, and refresh. Values are null, charts contain no points, and record tables contain no rows until their sources are assigned. Search and export become available when a mapped adapter returns data. **No sample financial values or assumed company calculations appear in these dashboards.**
 
+## ERP record management
+
+Open `/workspace` to browse the prepared modules for Customers, Leads, Quotations, Sales Orders, Invoices, Delivery Notes, Items, Employees, Attendance, Payroll, Expenses, Purchase Orders, Stock, and Projects. The workspace includes sections for custom DocTypes and custom reports, and dynamic record forms with custom fields and child tables. Create/edit and submit/cancel handlers are prepared but remain disabled until the company API is configured. See [ERP-WORKSPACE.md](ERP-WORKSPACE.md) for the adapter contract, routes, and integration requirements.
+
 ## Connecting the data later
 
 `lib/dashboards.ts` defines the dashboard IDs, titles, editable layout labels, and the `DashboardData` contract. The labels are starting points for the layout; their exact meaning, fields, and formulas remain to be confirmed.
