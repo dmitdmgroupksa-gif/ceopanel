@@ -1,5 +1,7 @@
 packages:
   - "apps/*"
+  # The CEO app uses its own npm lockfile and ceo:* scripts.
+  - "!apps/ceopanel"
   - "packages/*"
   - "!**/test/**"
   - "!**/fixtures/**"

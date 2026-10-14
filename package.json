@@ -9,11 +9,20 @@
     "url": "https://twitter.com/shadcn"
   },
   "workspaces": [
-    "apps/*",
+    "apps/v4",
     "packages/*"
   ],
   "scripts": {
-    "build": "turbo run build",
+    "ceo:install": "npm --prefix apps/ceopanel install --workspaces=false",
+    "ceo:dev": "npm --prefix apps/ceopanel run dev",
+    "ceo:build": "npm --prefix apps/ceopanel run build",
+    "ceo:start": "npm --prefix apps/ceopanel run start",
+    "ceo:test": "npm --prefix apps/ceopanel run test",
+    "ceo:typecheck": "npm --prefix apps/ceopanel run typecheck",
+    "ceo:test:browser": "npm --prefix apps/ceopanel run test:browser",
+    "build": "npm --prefix apps/ceopanel run build",
+    "start": "npm --prefix apps/ceopanel run start",
+    "ui:build": "turbo run build --filter=!ceopanel",
     "build:packages": "turbo run build --filter=./packages/*",
     "registry:build": "pnpm --filter=v4 registry:build && pnpm lint:fix && pnpm format:write -- --loglevel silent",
     "registry:capture": "pnpm --filter=v4 registry:capture",
@@ -22,7 +31,8 @@
     "registry:health:check": "turbo run registry:health:check --filter=v4",
     "registry:health:publish": "turbo run registry:health:publish --filter=v4",
     "explore:capture": "pnpm --filter=v4 explore:capture",
-    "dev": "turbo run dev",
+    "dev": "npm --prefix apps/ceopanel run dev",
+    "ui:dev": "turbo run dev --filter=!ceopanel",
     "shadcn:dev": "turbo run dev --filter=shadcn...",
     "shadcn": "pnpm --filter=shadcn start:dev",
     "shadcn:prod": "pnpm --filter=shadcn start:prod",
