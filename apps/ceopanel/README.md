@@ -1,65 +1,71 @@
 # Durar Masagh CEO platform
 
-The runnable application lives here. Navigation consists entirely of top tabs, including on mobile. Its cards, tables, dialogs, neutral colors, and dark mode use the original shadcn design.
+The application retains the shadcn card, table, tab, and dark-mode design. All CEO navigation sits in a horizontally scrollable top tab bar. Scroll controls and a quick selector make every dashboard accessible on desktop and mobile. Direct links use dashboard IDs, such as `/#stock` and `/#crm`.
 
-## Configuration and sign-in
+## CEO dashboards
 
-The defaults are **Durar Masagh**, **https://dmgroup.frappe.cloud**, and **Asia/Riyadh**. Copy `.env.example` to `.env.local` if these need changing. `ERPNEXT_COMPANY` optionally specifies the exact Company document name to select first. Without it, the first permitted company is selected; users can switch between companies they are allowed to read.
+The order follows the company screenshot. Expanded names were confirmed by the user.
 
-There are no shared API keys. Each user connects with their own ERPNext username and password. The Next.js server sends credentials directly to `/api/method/login`, captures the returned session, and stores only its SID in an HttpOnly, SameSite cookie (Secure in production). Passwords and session IDs are not returned in company snapshot JSON, saved in environment files, or written to application logs. The application validates the user through `frappe.auth.get_logged_user` before reading any business records.
+1. Sales Comparison
+2. Quotation Team Dashboard
+3. Management Insights
+4. Payments & Collections
+5. HR Dashboard
+6. Metabase Analytics
+7. Management Reports
+8. Dispatch & Logistics
+9. Attendance Dashboard
+10. Approvals Dashboard
+11. Purchase Dashboard
+12. Sales Operation
+13. Task Dashboard
+14. Stock Dashboard
+15. Accounts Dashboard
+16. AR Dashboard
+17. Sales Person Dashboard
+18. CRM Dashboard
 
-Sign-out removes the platform session cookie and clears displayed company data. It does not sign the user out of other ERPNext browser sessions. This adapter supports standard username/password sign-in; company deployments using mandatory 2FA or SSO need the corresponding authentication flow before connection can be used. No live company credentials were used during implementation or tests.
+All 18 screens are ready for data setup. Each has editable metric labels, a chart slot, record columns, reporting-period controls, and refresh. Values are null, charts contain no points, and record tables contain no rows until their sources are assigned. Search and export become available when a mapped adapter returns data. **No sample financial values or assumed company calculations appear in these dashboards.**
 
-## Prepared ERPNext data sources
+## Connecting the data later
 
-| Tab        | ERPNext DocTypes                                                | Scope                                                                                                                |
-| ---------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Overview   | Sales Invoice, Purchase Invoice, Sales Order, Project, Employee | Billing, outstanding balances, open work, and active employees                                                       |
-| Finance    | Sales Invoice, Purchase Invoice                                 | Submitted billing within the selected period; outstanding invoices across all dates                                  |
-| Sales      | Sales Order, Sales Invoice                                      | Submitted open orders across all dates; submitted invoices within the selected period                                |
-| Purchasing | Purchase Order, Purchase Invoice                                | Submitted open orders across all dates; submitted invoices within the selected period; outstanding supplier invoices |
-| Projects   | Project                                                         | Company projects, status, priority, target date, and completion                                                      |
-| People     | Employee                                                        | Active employees, departments, roles, and join dates                                                                 |
-| Reports    | Sales Invoice, Purchase Invoice                                 | Monthly billing report and CSV export                                                                                |
+`lib/dashboards.ts` defines the dashboard IDs, titles, editable layout labels, and the `DashboardData` contract. The labels are starting points for the layout; their exact meaning, fields, and formulas remain to be confirmed.
 
-Every business query includes the selected Company filter. The Company list itself comes from the signed-in user's permitted ERPNext records. Read permissions continue to be enforced by ERPNext; the app does not elevate access. If Frappe HR is absent or a user lacks employee permissions, the People source is unavailable while other sources can still load.
+`lib/dashboard-server.ts` holds an initially empty `dashboardAdapters` registry. Once the company supplies a dashboard's report, query, API, or Metabase source, register an adapter under that dashboard's ID. Each adapter receives a verified ERPNext user/company context and a reporting period, and returns:
 
-Financial values use the Company's default currency. Billing uses `base_net_total`, excluding tax, and includes negative returns. Outstanding balances are invoice `outstanding_amount × conversion_rate`; credit balances are included. Overdue counts include positive outstanding invoices with a due date before the current business date. These metrics describe **billing and outstanding invoices**, not profit, cash flow, or bank balances. Those require General Ledger/accounting reports and company-specific mappings.
+- The matching dashboard ID, selected company, currency, period, and update timestamp.
+- Metric labels and values, optionally formatted as numbers, currency, or percent.
+- Chart series and points.
+- Record columns and rows, with stable row IDs.
 
-The reporting period controls billing metrics and charts. Open orders, outstanding invoices, projects, and active employees retain their explicitly labeled all-date scopes. Monthly rows include only dates inside the selected period, so the first and last months may be partial. Dates follow `BUSINESS_TIMEZONE`.
+`GET /api/dashboards/[dashboardId]?days=30|90|365&company=...` validates the ID and reporting period. Unmapped dashboards return `awaiting-data` without calling ERPNext, Metabase, or another external service. A registered adapter runs only after company access is verified, and results for a different dashboard/company are rejected. Responses use `private, no-store` and vary by cookie.
 
-## Refresh behavior and errors
+The UI already renders returned metrics, charts, and records, supports search/paging/CSV export, and refreshes mapped dashboards once per minute while the page is visible. Obsolete requests are canceled when changing dashboard, company, or period. Existing ERPNext REST transport, metric helpers, and record components remain available to reuse in confirmed adapters. The previous generic snapshot endpoint is retained as integration scaffolding but is not called by the new CEO screens.
 
-Data is fetched through `/api/erpnext/snapshot` with `Cache-Control: private, no-store` and `Vary: Cookie`. There is no shared snapshot cache or database. The active visible page polls every 60 seconds; Refresh fetches immediately. Company and period changes cancel obsolete browser requests so older responses cannot replace the latest selection.
+When sharing the mappings, provide each dashboard's source, fields or report columns, filters, company scope, calculations, currency, date definitions, and any required actions. Keep private API credentials in the server environment rather than source files or browser props.
 
-The REST client follows every page in batches of 200. If a source exceeds 10,000 records, it returns an explicit error instead of showing truncated totals. Choose a shorter period or replace that source with a server-side ERPNext report for larger workloads. Pagination is not a transactional database snapshot; records changed during a multi-page fetch may be reflected in the next refresh.
+## ERPNext connection
 
-Source failures show **Unavailable**, not zero. A failed subsequent refresh retains the last successful snapshot with its company, period, and an error notice. It never substitutes demo data for live failures. Without a signed-in session the platform shows clearly labeled preview data, and preview CSV filenames start with `PREVIEW-`.
+Defaults are **Durar Masagh**, **https://dmgroup.frappe.cloud**, and **Asia/Riyadh**. Copy `.env.example` to `.env.local` to change them. `ERPNEXT_COMPANY` optionally sets the exact Company document to select first.
 
-## Extending synchronization
+Optional ERPNext sign-in sends credentials to the company site and stores only the returned SID in an HttpOnly, SameSite cookie (Secure in production). Passwords are not saved or echoed in responses. `/api/erpnext/context` checks `frappe.auth.get_logged_user` and reads the permitted Company list; it does not fetch dashboard business records. Connecting ERPNext leaves unmapped dashboards in **Awaiting data** status.
 
-`lib/erpnext-server.ts` owns the company-scoped source registry. Add DocTypes and field mappings there, then extend `lib/model.ts` and the corresponding tab. Custom fields and workflows must be checked against the actual company installation.
+Sign-out removes the platform cookie and clears displayed mapped data. It does not sign the user out of other ERPNext browser sessions. Standard username/password login is prepared; mandatory 2FA/SSO requires its corresponding authentication flow. Live company credentials have not been used in development tests.
 
-This first version prepares **read synchronization** for the mapped company records. ERPNext remains the source of record; record links open ERPNext for editing. It does not yet mirror every ERPNext DocType, write changes back, or run background/webhook synchronization. Future write actions should use the signed-in user's permissions, validate company ownership, enforce same-origin/CSRF protection, and handle ERPNext document workflows rather than updating raw financial totals.
+## Run and validate
 
-For background synchronization, introduce a permission-scoped service account, a durable queue/database, signed webhook validation, idempotent processing, and reconciliation before enabling writes. For profit, cash/bank, stock, payroll, and custom approvals, use the corresponding ERPNext reports/DocTypes rather than inferred billing metrics.
-
-The transport follows the official [Frappe REST API](https://docs.frappe.io/framework/user/en/api/rest), including its session authentication, fields, filters, and pagination conventions.
-
-## Development and validation
-
-From this directory:
+From the repository root:
 
 ```sh
-npm install --workspaces=false
+npm run ceo:install
 npm run dev
-npm run typecheck
-npm test
-npm run test:browser
+npm run ceo:typecheck
+npm run ceo:test
+npm run ceo:test:browser
 npm run build
 npm start
 ```
 
-The browser tests use Microsoft Edge on Windows. On Linux/macOS install Playwright Chromium with `npx playwright install chromium`. Tests mock ERPNext and cover desktop/mobile tabs, period selection, search, sorting, paging, exports, authentication failures, company selection, unavailable modules, stale snapshots, and sign-out. Integration tests cover credentials, origin checks, pagination, company filters, and financial calculations.
+Open **http://localhost:3000**. The focused app has its own npm lockfile. Browser tests use Edge on Windows and Playwright Chromium on other systems (`npx playwright install chromium`). Tests cover all tabs, responsive layout, deep links, source readiness, ERPNext context, and a mocked future adapter's rendering/search/export behavior. Integration tests verify that unmapped dashboards make no external requests, adapter results stay within the selected company, and existing transport/session protections continue to work.
 
-Use HTTPS for hosted production deployments. Install/build this app directory, provide server environment variables, and restrict access according to company policy. Behind a reverse proxy, set `CEOPANEL_ORIGIN` to the public origin (for example `https://ceo.your-company.com`, without a trailing slash) so sign-in origin validation uses the browser-facing URL. The preview is illustrative; live access requires ERPNext sign-in. The app has not been deployed or connected to live company records yet.
+Use HTTPS when hosting. Behind a reverse proxy, configure `CEOPANEL_ORIGIN` with the public origin, without a trailing slash. The application has not been deployed or connected to live dashboard data yet.

@@ -1,84 +1,68 @@
 "use client"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
+  ArrowLeftRight,
   BarChart3,
+  Bell,
+  Boxes,
   BriefcaseBusiness,
   Building2,
+  CalendarDays,
+  ChartNoAxesCombined,
   ChevronDown,
-  ExternalLink,
-  LayoutDashboard,
+  ChevronLeft,
+  ChevronRight,
+  CircleCheck,
+  ClipboardList,
+  Eye,
+  FileText,
+  HandCoins,
+  Landmark,
   LoaderCircle,
   LogOut,
   Moon,
   RefreshCw,
-  Search,
   ShoppingCart,
   Sun,
-  TrendingUp,
+  Truck,
   Users,
   Wallet,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { demoSnapshot } from "@/lib/demo"
-import { type Snapshot, type SourceKey } from "@/lib/model"
+import {
+  dashboards,
+  emptyDashboard,
+  findDashboard,
+  type DashboardData,
+  type DashboardId,
+} from "@/lib/dashboards"
+import type { DashboardContext } from "@/lib/dashboard-server"
+import { DashboardPanel } from "./dashboard-panel"
 import { LoginDialog } from "./login-dialog"
-import { MetricCards } from "./metrics"
-import { Overview } from "./overview"
-import { RecordsTable, tables } from "./records-table"
-import { Reports } from "./reports"
 
-const modules = [
-  {
-    id: "overview",
-    title: "Overview",
-    description:
-      "A clear view of company performance and what needs your attention.",
-    icon: LayoutDashboard,
-  },
-  {
-    id: "finance",
-    title: "Finance",
-    description:
-      "Monitor billing, receivables, and payables across your company.",
-    icon: Wallet,
-  },
-  {
-    id: "sales",
-    title: "Sales",
-    description: "Track customer orders, delivery progress, and billed sales.",
-    icon: TrendingUp,
-  },
-  {
-    id: "purchasing",
-    title: "Purchasing",
-    description:
-      "Review supplier commitments, incoming orders, and payments due.",
-    icon: ShoppingCart,
-  },
-  {
-    id: "projects",
-    title: "Projects",
-    description: "Keep current work, priorities, and project progress in view.",
-    icon: BriefcaseBusiness,
-  },
-  {
-    id: "people",
-    title: "People",
-    description: "Your company’s active team, roles, and departments.",
-    icon: Users,
-  },
-  {
-    id: "reports",
-    title: "Reports",
-    description: "Review monthly performance and export management reports.",
-    icon: BarChart3,
-  },
-]
-
+const icons = {
+  comparison: ArrowLeftRight,
+  quotations: ClipboardList,
+  insights: ChartNoAxesCombined,
+  payments: HandCoins,
+  hr: Users,
+  analytics: Eye,
+  reports: Bell,
+  logistics: Truck,
+  attendance: CalendarDays,
+  approvals: CircleCheck,
+  purchase: ShoppingCart,
+  sales: FileText,
+  tasks: BriefcaseBusiness,
+  stock: Boxes,
+  accounts: Landmark,
+  receivables: Wallet,
+  salespeople: Users,
+  crm: BarChart3,
+}
 type Config = {
   companyName: string
   siteUrl: string
@@ -86,148 +70,153 @@ type Config = {
   today: string
 }
 
-function SourceTabs({
-  snapshot,
-  sources,
-  search,
-  selected,
-}: {
-  snapshot: Snapshot
-  sources: SourceKey[]
-  search: string
-  selected?: SourceKey
-}) {
-  return (
-    <Tabs
-      key={selected}
-      defaultValue={
-        selected && sources.includes(selected) ? selected : sources[0]
-      }
-      className="gap-4"
-    >
-      <div className="overflow-x-auto">
-        <TabsList aria-label="Record types">
-          {sources.map((source) => (
-            <TabsTrigger value={source} key={source} className="px-4">
-              {tables[source].title}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </div>
-      {sources.map((source) => (
-        <TabsContent value={source} key={source}>
-          <RecordsTable
-            snapshot={snapshot}
-            source={source}
-            globalSearch={search}
-          />
-        </TabsContent>
-      ))}
-    </Tabs>
-  )
-}
-
 export function Dashboard({
   initial,
   initialError,
   config,
 }: {
-  initial: Snapshot | null
+  initial: DashboardContext | null
   initialError: string | null
   config: Config
 }) {
-  const [snapshot, setSnapshot] = useState(initial)
-  const [active, setActive] = useState("overview")
-  const [days, setDays] = useState(initial?.period.days ?? 90)
-  const [company, setCompany] = useState(
-    initial?.mode === "live" ? initial.company : ""
+  const [context, setContext] = useState(initial)
+  const [active, setActive] = useState<DashboardId>(dashboards[0].id)
+  const [days, setDays] = useState(90)
+  const [data, setData] = useState<DashboardData>(() =>
+    emptyDashboard(dashboards[0], config.today)
   )
-  const [search, setSearch] = useState("")
-  const [selectedSource, setSelectedSource] = useState<SourceKey | undefined>()
   const [error, setError] = useState(initialError)
+  const [connectionError, setConnectionError] = useState(initialError)
   const [busy, setBusy] = useState(false)
   const [connectOpen, setConnectOpen] = useState(false)
-  const [sessionExpired, setSessionExpired] = useState(false)
-  const sequence = useRef(0)
-  const controller = useRef<AbortController | null>(null)
-  const { resolvedTheme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const nav = useRef<HTMLDivElement>(null)
+  const [scroll, setScroll] = useState({ left: false, right: false })
+  const controller = useRef<AbortController | null>(null)
+  const sequence = useRef(0)
+  const { resolvedTheme, setTheme } = useTheme()
+  const definition = findDashboard(active)!
+  const visibleData =
+    data.dashboardId === active && data.company === (context?.company ?? null)
+      ? data
+      : emptyDashboard(definition, config.today, days, context?.company)
 
   useEffect(() => {
     setMounted(true)
-    const hash = window.location.hash.slice(1)
-    if (modules.some((module) => module.id === hash)) setActive(hash)
-    return () => controller.current?.abort()
+    const followHash = () => {
+      const selected = findDashboard(window.location.hash.slice(1))
+      if (selected) setActive(selected.id)
+    }
+    followHash()
+    window.addEventListener("hashchange", followHash)
+    return () => {
+      window.removeEventListener("hashchange", followHash)
+      controller.current?.abort()
+    }
   }, [])
 
-  const refresh = useCallback(
-    async (nextDays = days, nextCompany = company, forceLive = false) => {
-      controller.current?.abort()
-      const token = ++sequence.current
-      if (snapshot?.mode === "preview" && !forceLive) {
-        setSnapshot(
-          demoSnapshot(
-            config.today,
-            nextDays,
-            config.siteUrl,
-            config.timezone,
-            config.companyName
-          )
-        )
-        setError(null)
-        return
-      }
-      const abort = new AbortController()
-      controller.current = abort
-      setBusy(true)
-      setError(null)
-      try {
-        const params = new URLSearchParams({ days: String(nextDays) })
-        if (nextCompany) params.set("company", nextCompany)
-        const response = await fetch(`/api/erpnext/snapshot?${params}`, {
-          cache: "no-store",
-          signal: abort.signal,
-        })
-        const body = await response.json()
-        if (!response.ok) {
-          if (response.status === 401 && token === sequence.current)
-            setSessionExpired(true)
-          throw new Error(body.error || "Company data could not be loaded.")
-        }
-        if (token === sequence.current) {
-          setSnapshot(body)
-          setCompany(body.company)
-          setDays(body.period.days)
-          setSessionExpired(false)
-        }
-      } catch (cause) {
-        if (token === sequence.current && !abort.signal.aborted)
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : "Company data could not be loaded."
-          )
-      } finally {
-        if (token === sequence.current) setBusy(false)
-      }
-    },
-    [days, company, snapshot?.mode, config]
-  )
+  useEffect(() => {
+    const element = nav.current
+    if (!element) return
+    const update = () =>
+      setScroll({
+        left: element.scrollLeft > 2,
+        right:
+          element.scrollLeft + element.clientWidth < element.scrollWidth - 2,
+      })
+    update()
+    element.addEventListener("scroll", update, { passive: true })
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => {
+      element.removeEventListener("scroll", update)
+      observer.disconnect()
+    }
+  }, [])
 
   useEffect(() => {
-    if (snapshot?.mode !== "live" || sessionExpired || busy) return
+    nav.current
+      ?.querySelector(`[data-state="active"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" })
+  }, [active])
+
+  const refresh = useCallback(async () => {
+    controller.current?.abort()
+    const token = ++sequence.current
+    const abort = new AbortController()
+    controller.current = abort
+    setBusy(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({ days: String(days) })
+      if (context?.company) params.set("company", context.company)
+      const response = await fetch(`/api/dashboards/${active}?${params}`, {
+        cache: "no-store",
+        signal: abort.signal,
+      })
+      const body = await response.json()
+      if (!response.ok)
+        throw new Error(body.error || "Dashboard data could not be loaded.")
+      if (token === sequence.current)
+        setData({
+          ...body,
+          company:
+            body.status === "awaiting-data"
+              ? (context?.company ?? null)
+              : body.company,
+        })
+    } catch (cause) {
+      if (token === sequence.current && !abort.signal.aborted)
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Dashboard data could not be loaded."
+        )
+    } finally {
+      if (token === sequence.current) setBusy(false)
+    }
+  }, [active, days, context?.company])
+
+  useEffect(() => {
+    void refresh()
+    return () => controller.current?.abort()
+  }, [refresh])
+  useEffect(() => {
+    if (data.status !== "ready" || busy) return
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") void refresh()
     }, 60000)
     return () => clearInterval(timer)
-  }, [snapshot?.mode, sessionExpired, busy, refresh])
+  }, [data.status, busy, refresh])
 
-  function navigate(tab: string, source?: SourceKey) {
-    setActive(tab)
-    setSelectedSource(source)
-    setSearch("")
-    window.history.replaceState(null, "", `#${tab}`)
+  function navigate(id: string) {
+    const selected = findDashboard(id)
+    if (selected) {
+      setActive(selected.id)
+      window.history.pushState(null, "", `#${selected.id}`)
+    }
   }
+
+  async function connect(company?: string) {
+    setConnectionError(null)
+    try {
+      const params = company ? `?company=${encodeURIComponent(company)}` : ""
+      const response = await fetch(`/api/erpnext/context${params}`, {
+        cache: "no-store",
+      })
+      const body = await response.json()
+      if (!response.ok)
+        throw new Error(body.error || "ERPNext connection could not be loaded.")
+      setContext(body)
+    } catch (cause) {
+      setConnectionError(
+        cause instanceof Error
+          ? cause.message
+          : "ERPNext connection could not be loaded."
+      )
+    }
+  }
+
   async function signOut() {
     controller.current?.abort()
     ++sequence.current
@@ -235,48 +224,37 @@ export function Dashboard({
     try {
       const response = await fetch("/api/erpnext/session", { method: "DELETE" })
       if (!response.ok) throw new Error("Sign-out failed. Please try again.")
-      setSnapshot(
-        demoSnapshot(
-          config.today,
-          days,
-          config.siteUrl,
-          config.timezone,
-          config.companyName
-        )
-      )
-      setCompany("")
+      setContext(null)
+      setData(emptyDashboard(definition, config.today, days))
       setError(null)
-      setSessionExpired(false)
-      setSearch("")
+      setConnectionError(null)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sign-out failed.")
+      setConnectionError(
+        cause instanceof Error ? cause.message : "Sign-out failed."
+      )
     } finally {
       setBusy(false)
     }
   }
-  const module = modules.find((item) => item.id === active) ?? modules[0]
-  const live = snapshot?.mode === "live"
-  const unavailable = snapshot
-    ? Object.values(snapshot.sources).filter((source) => source.error).length
-    : 0
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" data-hydrated={mounted}>
       <Tabs value={active} onValueChange={navigate} className="gap-0">
         <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
-          <div className="mx-auto flex h-18 max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto flex min-h-18 max-w-[1600px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
             <a
-              href="#overview"
+              href="#sales-comparison"
               onClick={(event) => {
                 event.preventDefault()
-                navigate("overview")
+                navigate("sales-comparison")
               }}
-              className="flex shrink-0 items-center gap-3 rounded-md focus-visible:ring-2"
+              className="flex min-w-0 items-center gap-3 rounded focus-visible:ring-2"
             >
-              <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Building2 className="size-5" />
               </span>
-              <span>
-                <span className="block text-sm font-semibold tracking-tight sm:text-base">
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold sm:text-base">
                   {config.companyName}
                 </span>
                 <span className="block text-[11px] text-muted-foreground">
@@ -284,35 +262,12 @@ export function Dashboard({
                 </span>
               </span>
             </a>
-            <div className="relative hidden max-w-xs flex-1 lg:block">
-              <Search
-                className="absolute left-3 top-2.5 size-4 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <Input
-                aria-label="Search current view"
-                placeholder="Search current view…"
-                className="bg-muted/40 pl-9"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                disabled={active === "reports"}
-              />
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <Badge
                 variant="outline"
-                className="hidden gap-1.5 font-normal sm:inline-flex"
+                className="hidden font-normal md:inline-flex"
               >
-                <span
-                  className={`size-1.5 rounded-full ${live && !error && !unavailable ? "bg-emerald-500" : "bg-amber-500"}`}
-                />
-                {live
-                  ? error
-                    ? "Refresh failed"
-                    : unavailable
-                      ? "Partially loaded"
-                      : "ERPNext connected"
-                  : "Preview"}
+                {dashboards.length} CEO dashboards
               </Badge>
               <Button
                 variant="ghost"
@@ -324,13 +279,13 @@ export function Dashboard({
               >
                 {mounted && resolvedTheme === "dark" ? <Sun /> : <Moon />}
               </Button>
-              {live ? (
+              {context ? (
                 <Button
                   variant="outline"
                   size="sm"
                   aria-label="Sign out"
-                  disabled={busy}
                   onClick={signOut}
+                  disabled={busy}
                 >
                   <LogOut />
                   <span className="hidden sm:inline">Sign out</span>
@@ -342,132 +297,135 @@ export function Dashboard({
               )}
             </div>
           </div>
-          <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
-            <div className="min-w-0 overflow-x-auto pb-[5px]">
+          <div className="mx-auto flex max-w-[1600px] items-center gap-1 px-3 sm:px-6 lg:px-8">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Scroll dashboard tabs left"
+              disabled={!scroll.left}
+              onClick={() =>
+                nav.current?.scrollBy({ left: -400, behavior: "smooth" })
+              }
+            >
+              <ChevronLeft />
+            </Button>
+            <div
+              ref={nav}
+              className="min-w-0 flex-1 overflow-x-auto pb-[5px] [scrollbar-width:none]"
+            >
               <TabsList
                 variant="line"
-                aria-label="Company management"
-                className="h-12 gap-2 sm:gap-4"
+                aria-label="CEO dashboards"
+                className="h-12 gap-2"
               >
-                {modules.map((item) => (
-                  <TabsTrigger
-                    key={item.id}
-                    value={item.id}
-                    className="flex-none gap-2 px-3"
-                  >
-                    <item.icon className="size-4" />
-                    <span>{item.title}</span>
-                  </TabsTrigger>
-                ))}
+                {dashboards.map((item) => {
+                  const Icon = icons[item.icon]
+                  return (
+                    <TabsTrigger
+                      key={item.id}
+                      value={item.id}
+                      className="flex-none gap-2 px-3"
+                    >
+                      <Icon className="size-4" />
+                      {item.title}
+                    </TabsTrigger>
+                  )
+                })}
               </TabsList>
             </div>
-            <span className="ml-8 hidden shrink-0 pb-1 text-xs text-muted-foreground xl:block">
-              Company workspace
-            </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Scroll dashboard tabs right"
+              disabled={!scroll.right}
+              onClick={() =>
+                nav.current?.scrollBy({ left: 400, behavior: "smooth" })
+              }
+            >
+              <ChevronRight />
+            </Button>
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1600px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          {snapshot?.mode === "preview" && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm">
-              <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  Preview data.
-                </span>{" "}
-                Connect ERPNext to see your company’s live records.
-              </p>
-              <button
-                className="text-xs font-medium underline underline-offset-4"
-                onClick={() => setConnectOpen(true)}
-              >
-                Connect {new URL(config.siteUrl).host}
-              </button>
-            </div>
-          )}
-          {error && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm">
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Dashboard data setup pending.
+              </span>{" "}
+              Your company data will appear as each dashboard is connected.
+            </p>
+            <Badge variant="outline" className="gap-1.5 font-normal">
+              <span
+                className={`size-1.5 rounded-full ${context ? "bg-emerald-500" : "bg-muted-foreground/50"}`}
+              />
+              {context ? "ERPNext connected" : "ERPNext ready to connect"}
+            </Badge>
+          </div>
+          {(connectionError || error) && (
             <div
               role="alert"
               className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-800 dark:text-amber-300"
             >
-              {error}
-              {live && (
+              {connectionError || error}
+              {error && visibleData.status === "ready" && (
                 <span className="block pt-1 text-xs">
-                  Displaying the last successful snapshot for {snapshot.company}
-                  , {snapshot.period.from} – {snapshot.period.to}.
+                  Showing the last successful data for {visibleData.company}.
                 </span>
               )}
-              {sessionExpired && (
-                <button
-                  onClick={() => setConnectOpen(true)}
-                  className="mt-2 underline underline-offset-4"
-                >
-                  Sign in again
-                </button>
-              )}
             </div>
           )}
-          {unavailable > 0 && (
-            <div
-              role="status"
-              className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
-            >
-              {unavailable} data source{unavailable === 1 ? " is" : "s are"}{" "}
-              unavailable. Affected totals are shown as unavailable; details
-              appear in each module.
-            </div>
-          )}
-          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{snapshot?.company || config.companyName}</span>
-                <span>/</span>
-                <span>{module.title}</span>
-              </div>
+          <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
+            <div className="min-w-0">
+              <p className="mb-2 text-xs text-muted-foreground">
+                {context?.company || config.companyName} / Dashboards
+              </p>
               <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">
-                {active === "overview" ? "Company overview" : module.title}
+                {definition.title}
               </h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                {module.description}
+                {definition.description}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              {live && snapshot.companies.length > 1 && (
-                <div className="relative">
-                  <select
-                    aria-label="Select company"
-                    className="h-9 max-w-48 appearance-none rounded-md border bg-background py-1 pl-3 pr-8 text-sm"
-                    value={company}
-                    onChange={(event) => {
-                      const next = event.target.value
-                      setCompany(next)
-                      void refresh(days, next)
-                    }}
-                  >
-                    {snapshot.companies.map((item) => (
-                      <option key={item.name} value={item.name}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2.5 top-3 size-3.5 text-muted-foreground" />
-                </div>
-              )}
+            <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
                 <select
-                  aria-label="Reporting period"
-                  className="h-9 appearance-none rounded-md border bg-background py-1 pl-3 pr-8 text-sm shadow-xs"
-                  value={days}
-                  onChange={(event) => {
-                    const next = Number(event.target.value)
-                    setDays(next)
-                    void refresh(next)
-                  }}
+                  aria-label="Choose dashboard"
+                  className="h-9 max-w-full appearance-none rounded-md border bg-background py-1 pl-3 pr-8 text-sm shadow-xs"
+                  value={active}
+                  onChange={(event) => navigate(event.target.value)}
                 >
-                  <option value={30}>Last 30 days</option>
-                  <option value={90}>Last 90 days</option>
-                  <option value={365}>Last 12 months</option>
+                  {dashboards.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2.5 top-3 size-3.5 text-muted-foreground" />
               </div>
+              {context && context.companies.length > 1 && (
+                <select
+                  aria-label="Select company"
+                  className="h-9 max-w-48 rounded-md border bg-background px-3 text-sm"
+                  value={context.company}
+                  onChange={(event) => void connect(event.target.value)}
+                >
+                  {context.companies.map((item) => (
+                    <option key={item.name} value={item.name}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <select
+                aria-label="Reporting period"
+                className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
+                value={days}
+                onChange={(event) => setDays(Number(event.target.value))}
+              >
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
+                <option value={365}>Last 12 months</option>
+              </select>
               <Button
                 variant="outline"
                 size="sm"
@@ -480,133 +438,32 @@ export function Dashboard({
                 ) : (
                   <RefreshCw />
                 )}
-                <span>{busy ? "Refreshing…" : "Refresh"}</span>
-              </Button>
-              <Button variant="outline" size="icon" asChild>
-                <a
-                  href={`${config.siteUrl}/app`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Open company ERPNext"
-                >
-                  <ExternalLink />
-                </a>
+                {busy ? "Refreshing…" : "Refresh"}
               </Button>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
-              {snapshot
-                ? `${snapshot.period.from} – ${snapshot.period.to} · ${snapshot.currency}`
-                : "Waiting for company data"}
+              {visibleData.period.from} – {visibleData.period.to}
             </span>
             <span role="status" aria-live="polite">
               {busy
-                ? "Loading company records…"
-                : snapshot?.syncedAt
-                  ? `Last refreshed ${new Date(snapshot.syncedAt).toLocaleTimeString("en", { timeZone: config.timezone, hour: "2-digit", minute: "2-digit" })} ${sessionExpired ? "· refresh paused" : "· auto-refresh every minute"}`
-                  : "Illustrative records · not company data"}
+                ? "Loading dashboard…"
+                : visibleData.updatedAt
+                  ? `Last updated ${new Date(visibleData.updatedAt).toLocaleTimeString("en", { timeZone: config.timezone, hour: "2-digit", minute: "2-digit" })}`
+                  : "Awaiting your data source"}
             </span>
           </div>
-          <div className="relative lg:hidden">
-            <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-            <Input
-              aria-label="Search current view"
-              placeholder="Search current view…"
-              className="pl-9"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              disabled={active === "reports"}
-            />
-          </div>
-          {snapshot ? (
-            <>
-              <TabsContent value="overview">
-                <Overview
-                  snapshot={snapshot}
-                  search={search}
-                  navigate={navigate}
-                />
-              </TabsContent>
-              <TabsContent value="finance" className="space-y-6">
-                <MetricCards snapshot={snapshot} kind="finance" />
-                <SourceTabs
-                  selected={selectedSource}
-                  snapshot={snapshot}
-                  sources={[
-                    "receivables",
-                    "payables",
-                    "salesInvoices",
-                    "purchaseInvoices",
-                  ]}
-                  search={search}
-                />
-              </TabsContent>
-              <TabsContent value="sales" className="space-y-6">
-                <MetricCards snapshot={snapshot} kind="sales" />
-                <SourceTabs
-                  selected={selectedSource}
-                  snapshot={snapshot}
-                  sources={["salesOrders", "salesInvoices"]}
-                  search={search}
-                />
-              </TabsContent>
-              <TabsContent value="purchasing" className="space-y-6">
-                <MetricCards snapshot={snapshot} kind="purchasing" />
-                <SourceTabs
-                  selected={selectedSource}
-                  snapshot={snapshot}
-                  sources={["purchaseOrders", "payables", "purchaseInvoices"]}
-                  search={search}
-                />
-              </TabsContent>
-              <TabsContent value="projects" className="space-y-6">
-                <MetricCards snapshot={snapshot} kind="projects" />
-                <RecordsTable
-                  snapshot={snapshot}
-                  source="projects"
-                  globalSearch={search}
-                />
-              </TabsContent>
-              <TabsContent value="people" className="space-y-6">
-                <MetricCards snapshot={snapshot} kind="people" />
-                <RecordsTable
-                  snapshot={snapshot}
-                  source="employees"
-                  globalSearch={search}
-                />
-              </TabsContent>
-              <TabsContent value="reports">
-                <Reports snapshot={snapshot} />
-              </TabsContent>
-            </>
-          ) : (
-            <div className="rounded-xl border border-dashed p-12 text-center">
-              <Building2 className="mx-auto mb-4 size-8 text-muted-foreground" />
-              <h2 className="font-medium">Your company workspace</h2>
-              <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                Connect your ERPNext account to load company records. If you
-                have signed in, try refreshing or check your company
-                permissions.
-              </p>
-              <Button className="mt-5" onClick={() => setConnectOpen(true)}>
-                Connect ERPNext
-              </Button>
-              <Button
-                className="ml-2 mt-5"
-                variant="outline"
-                onClick={signOut}
-                disabled={busy}
-              >
-                Sign out
-              </Button>
-            </div>
-          )}
+          {dashboards.map((item) => (
+            <TabsContent key={item.id} value={item.id}>
+              <DashboardPanel definition={item} data={visibleData} />
+            </TabsContent>
+          ))}
           <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-5 text-[11px] text-muted-foreground">
             <span>{config.companyName} · CEO Panel</span>
             <span>
-              {live
-                ? `Signed in as ${snapshot.user} · ERPNext is the source of record`
+              {context
+                ? `Signed in as ${context.user}`
                 : `Prepared for ${new URL(config.siteUrl).host}`}
             </span>
           </footer>
@@ -616,12 +473,7 @@ export function Dashboard({
         open={connectOpen}
         onOpenChange={setConnectOpen}
         siteUrl={config.siteUrl}
-        onConnected={async () => {
-          setSnapshot(null)
-          setCompany("")
-          setSessionExpired(false)
-          await refresh(days, "", true)
-        }}
+        onConnected={() => connect()}
       />
     </div>
   )

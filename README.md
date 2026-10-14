@@ -1,6 +1,6 @@
 # Durar Masagh — CEO Panel
 
-A company management platform built from the shadcn dashboard design, with top tabs for **Overview, Finance, Sales, Purchasing, Projects, People, and Reports**.
+A company management platform built from the shadcn dashboard design, with **18 CEO dashboard tabs** in the company menu's order. All navigation sits at the top, with scroll controls and a quick dashboard selector.
 
 ## Run the platform
 
@@ -11,7 +11,7 @@ npm run ceo:install
 npm run dev
 ```
 
-Open **http://localhost:3000**. The platform starts with explicitly labeled illustrative data. Click **Connect ERPNext** to sign in to **https://dmgroup.frappe.cloud** using your own company account. Company data is read through your ERPNext permissions; passwords are never saved by the platform.
+Open **http://localhost:3000**. Each dashboard has its metric, chart, and record layout ready and displays **Awaiting data**. Data sources and calculations will be connected when the company supplies their mappings. Optional **Connect ERPNext** sign-in connects to **https://dmgroup.frappe.cloud** and loads only the user's permitted company context; it does not automatically assign dashboard data sources.
 
 ```sh
 npm run ceo:typecheck
