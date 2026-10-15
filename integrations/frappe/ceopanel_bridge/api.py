@@ -4,6 +4,8 @@ No ignore_permissions flags, arbitrary methods, SQL reports, or model supplied D
 import json
 import hashlib
 import hmac
+import time
+from uuid import UUID
 from datetime import datetime
 import frappe
 from frappe.model.workflow import apply_workflow, get_transitions
@@ -37,9 +39,9 @@ def permitted_fields(doctype, parenttype=None, permission_type="read"):
     return set(frappe.get_meta(doctype).get_permitted_fieldnames(parenttype=parenttype, user=frappe.session.user, permission_type=permission_type))
 
 
-def project_fields(fields, doctype, parenttype=None):
+def project_fields(fields, doctype, parenttype=None, permission_type="write"):
     allowed = permitted_fields(doctype, parenttype)
-    writable = permitted_fields(doctype, parenttype, "write")
+    writable = permitted_fields(doctype, parenttype, permission_type)
     result = []
     meta = frappe.get_meta(doctype)
     for field in fields:
@@ -50,7 +52,7 @@ def project_fields(fields, doctype, parenttype=None):
         item["readOnly"] = bool(item.get("readOnly") or df.read_only or field["name"] not in writable)
         item["allowOnSubmit"] = bool(item.get("allowOnSubmit") and df.allow_on_submit)
         if df.fieldtype == "Table":
-            item["fields"] = project_fields(field.get("fields", []), df.options, parenttype or doctype)
+            item["fields"] = project_fields(field.get("fields", []), df.options, parenttype or doctype, permission_type)
         result.append(item)
     return result
 
@@ -73,8 +75,8 @@ def values_for(doc, fields):
     return result
 
 
-def envelope(doc, fields):
-    allowed = set(next((m.get("workflowActions", []) for m in config().get("modules", []) if m["doctype"] == doc.doctype), []))
+def envelope(doc, fields, m):
+    allowed = set(m.get("workflowActions", [])) if m.get("writeValidated") else set()
     transitions = get_transitions(doc) if allowed else []
     return {"name": doc.name, "modified": str(doc.modified), "docstatus": doc.docstatus, "values": values_for(doc, fields), "workflowActions": [t.action for t in transitions if t.action in allowed]}
 
@@ -96,9 +98,9 @@ def roles():
 def schema(module, company):
     m = mapping(module, company)
     meta = frappe.get_meta(m["doctype"])
-    fields = project_fields(m.get("fields", []), m["doctype"])
     # Get permissions server-side. Record-specific checks still run on every read/write.
     permissions = {key: bool(frappe.has_permission(m["doctype"], perm)) for key, perm in (("read", "read"), ("create", "create"), ("edit", "write"), ("submit", "submit"), ("cancel", "cancel"))}
+    fields = project_fields(m.get("fields", []), m["doctype"], permission_type="create" if permissions["create"] and not permissions["edit"] else "write")
     for key in ("create", "edit", "submit", "cancel"):
         permissions[key] = permissions[key] and bool(m.get("writeValidated"))
     if frappe.db.exists("Workflow", {"document_type": m["doctype"], "is_active": 1}):
@@ -117,13 +119,13 @@ def records(module, company, search="", offset=0, limit=20):
         filters["name"] = ["like", "%" + search + "%"]
     rows = frappe.get_list(m["doctype"], fields=["name"], filters=filters, start=offset, page_length=limit + 1, order_by="modified desc")
     fields = project_fields(m.get("fields", []), m["doctype"])
-    return {"records": [envelope(load_doc(m, r.name, company), fields) for r in rows[:limit]], "hasMore": len(rows) > limit}
+    return {"records": [envelope(load_doc(m, r.name, company), fields, m) for r in rows[:limit]], "hasMore": len(rows) > limit}
 
 
 @frappe.whitelist()
 def record(module, company, name):
     m = mapping(module, company)
-    return envelope(load_doc(m, name, company), project_fields(m.get("fields", []), m["doctype"]))
+    return envelope(load_doc(m, name, company), project_fields(m.get("fields", []), m["doctype"]), m)
 
 
 @frappe.whitelist()
@@ -160,7 +162,7 @@ def checked_values(values, fields, doc=None):
     definitions = {f["name"]: f for f in fields}
     result = {}
     for key, value in values.items():
-        if key not in definitions or definitions[key].get("readOnly") or key in ("doctype", "docstatus", "owner", "modified", "ignore_permissions", "name"):
+        if key not in definitions or definitions[key].get("readOnly") or key in ("doctype", "docstatus", "owner", "modified", "ignore_permissions", "name", "flags", "parent", "parenttype", "parentfield", "idx", "creation", "modified_by", "__proto__", "constructor", "prototype"):
             frappe.throw("Field access denied", frappe.PermissionError)
         f = definitions[key]
         if doc and doc.docstatus == 1 and not f.get("allowOnSubmit"):
@@ -172,14 +174,19 @@ def checked_values(values, fields, doc=None):
             seen = set()
             cleaned = []
             for row in value:
+                if not isinstance(row, dict):
+                    frappe.throw("Invalid child row")
                 row = dict(row)
                 row_id = row.pop("_row_id", None)
                 if row_id and (row_id not in existing or row_id in seen):
                     frappe.throw("Child row identity mismatch", frappe.PermissionError)
                 seen.add(row_id) if row_id else None
-                row_values = checked_values(row, f.get("fields", []))
+                child = existing.get(row_id)
+                row_values = checked_values(row, f.get("fields", []), child)
                 if row_id:
-                    row_values["name"] = row_id
+                    # Merge only into the server-loaded row. Rebuilding a partial row
+                    # would erase hidden/read-only values when Frappe replaces the table.
+                    row_values = {**child.as_dict(), **row_values}
                 cleaned.append(row_values)
             result[key] = cleaned
         else:
@@ -192,10 +199,12 @@ def checked_values(values, fields, doc=None):
 @frappe.whitelist(methods=["POST"])
 def save(module, company, values, name=None, expectedModified=None):
     m = mapping(module, company, write=True)
-    fields = project_fields(m.get("fields", []), m["doctype"])
+    fields = project_fields(m.get("fields", []), m["doctype"], permission_type="write" if name else "create")
     if name and not expectedModified:
         frappe.throw("Expected version required")
     doc = load_doc(m, name, company, "write", expectedModified) if name else frappe.new_doc(m["doctype"])
+    if doc.docstatus == 2:
+        frappe.throw("Cancelled records cannot be changed", frappe.PermissionError)
     values = frappe.parse_json(values)
     if m.get("companyField") and isinstance(values, dict):
         supplied_company = values.pop(m["companyField"], None)
@@ -206,7 +215,7 @@ def save(module, company, values, name=None, expectedModified=None):
         cleaned[m["companyField"]] = company
     doc.update(cleaned)
     doc.save()  # native permissions, validation, and atomic timestamp checks
-    return envelope(doc, fields)
+    return envelope(doc, fields, m)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -223,7 +232,7 @@ def action(module, company, name, action, expectedModified):
         doc = apply_workflow(doc, action)
     else:
         frappe.throw("Use a configured native workflow transition", frappe.PermissionError)
-    return envelope(doc, project_fields(m.get("fields", []), m["doctype"]))
+    return envelope(doc, project_fields(m.get("fields", []), m["doctype"]), m)
 
 
 @frappe.whitelist()
@@ -244,14 +253,25 @@ def report(report, company, filters=None):
     m = next((r for r in config().get("reports", []) if r["id"] == report and r.get("readValidated")), None)
     if not m:
         frappe.throw("Report awaits validation", frappe.PermissionError)
-    filters = checked_values(filters or {}, m.get("filters", []))
+    filters = frappe.parse_json(filters or {})
+    if m.get("companyField") and isinstance(filters, dict):
+        filters = dict(filters)
+        supplied = filters.pop(m["companyField"], None)
+        if supplied is not None and supplied != company:
+            frappe.throw("Report company mismatch", frappe.PermissionError)
+    filters = checked_values(filters, m.get("filters", []))
     if m.get("companyField"):
         filters[m["companyField"]] = company
     from frappe.desk.query_report import run
-    result = run(m["erpName"], filters=filters)
+    # Custom-report defaults must not override the validated company/period,
+    # and prepared snapshots must not substitute stale filters or permissions.
+    result = run(m["erpName"], filters=filters, are_default_filters=False, ignore_prepared_report=True)
     columns = [{"key": c.get("fieldname") or str(i), "label": c.get("label") or c.get("fieldname") or str(i)} if isinstance(c, dict) else {"key": str(i), "label": c.split(":")[0]} for i, c in enumerate(result.get("columns", []))]
-    rows = [{c["key"]: row.get(c["key"]) if isinstance(row, dict) else row[i] for i, c in enumerate(columns)} for row in result.get("result", [])]
-    return {"columns": columns, "rows": rows}
+    rows = [{c["key"]: row.get(c["key"]) if isinstance(row, dict) else row[i] if i < len(row) else None for i, c in enumerate(columns)} for row in result.get("result") or []]
+    # Frappe can append an aggregate row. Keep it separate so deterministic
+    # dashboard sums/counts never count that row as a business record.
+    total_row = rows.pop() if rows and result.get("add_total_row") else None
+    return {"columns": columns, "rows": rows, "totalRow": total_row}
 
 
 @frappe.whitelist()
@@ -271,15 +291,22 @@ def dashboard(dashboard, company, period):
 
 
 @frappe.whitelist(methods=["POST"])
-def execute_proposal(proposal, company, payload):
+def execute_proposal(proposal, company, payload, authorization=None):
     company_access(company)
-    if not isinstance(proposal, str) or len(proposal) != 36:
+    try:
+        if str(UUID(proposal)) != proposal:
+            frappe.throw("Invalid proposal identity")
+    except (ValueError, TypeError, AttributeError):
         frappe.throw("Invalid proposal identity")
     if not frappe.conf.get("ceopanel_receipt_secret"):
         frappe.throw("Receipt verification awaits configuration")
+    if not isinstance(payload, str):
+        frappe.throw("Proposal requires its exact serialized payload")
+    verify_execution_authorization(proposal, company, payload, authorization)
     # Durable receipt in ERP's transaction prevents duplicate creates/side effects.
     receipt = "ceopanel-proposal-" + proposal
     frappe.db.get_value("Company", company, "name", for_update=True)
+    verify_execution_authorization(proposal, company, payload, authorization)
     if frappe.db.exists("Comment", {"comment_type": "Info", "reference_doctype": "Company", "reference_name": company, "subject": receipt}):
         return proposal_receipt(proposal, company)
     p = frappe.parse_json(payload)
@@ -302,11 +329,25 @@ def execute_proposal(proposal, company, payload):
     else:
         frappe.throw("Channel execution awaits validation")
     # Only a minimal receipt is retained; business data stays permission checked.
-    receipt_payload = {"proposal": proposal, "module": p["module"], "name": result["name"], "modified": result["modified"], "company": company}
+    receipt_payload = {"proposal": proposal, "module": p["module"], "name": result["name"], "modified": result["modified"], "company": company, "payloadHash": hashlib.sha256(payload.encode()).hexdigest(), "actor": frappe.session.user}
     canonical = json.dumps(receipt_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     receipt_data = {"receipt": receipt_payload, "signature": hmac.new(frappe.conf.ceopanel_receipt_secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()}
     frappe.get_doc({"doctype": "Comment", "comment_type": "Info", "reference_doctype": "Company", "reference_name": company, "subject": receipt, "content": json.dumps(receipt_data)}).insert()
     return receipt_data
+
+
+def verify_execution_authorization(proposal, company, payload, authorization):
+    authorization = frappe.parse_json(authorization)
+    timestamp = authorization.get("timestamp") if isinstance(authorization, dict) else None
+    signature = authorization.get("signature", "") if isinstance(authorization, dict) else ""
+    secret = frappe.conf.get("ceopanel_receipt_secret")
+    if not secret or type(timestamp) is not int or abs(time.time() - timestamp) > 60 or not isinstance(signature, str):
+        frappe.throw("Execution authorization expired or missing", frappe.PermissionError)
+    expected = {"actor": frappe.session.user, "company": company, "payloadHash": hashlib.sha256(payload.encode()).hexdigest(), "proposal": proposal, "timestamp": timestamp}
+    canonical = json.dumps(expected, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    digest = hmac.new(secret.encode(), ("ceopanel.execute.v1:" + canonical).encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, digest):
+        frappe.throw("Execution authorization mismatch", frappe.PermissionError)
 
 
 @frappe.whitelist()
@@ -338,3 +379,58 @@ def discovery():
         meta = frappe.get_meta(m["doctype"])
         schemas[m["id"]] = {"doctype": m["doctype"], "fields": [{"name": f.fieldname, "label": f.label, "type": f.fieldtype, "options": f.options, "required": f.reqd, "readOnly": f.read_only, "permlevel": f.permlevel} for f in meta.fields], "permissions": meta.permissions}
     return {"versions": get_versions(), "companies": frappe.get_list("Company", fields=["name", "default_currency"]), "schemas": schemas, "customDocTypes": frappe.get_list("DocType", filters={"custom": 1}, fields=["name", "module"], page_length=1000), "reports": frappe.get_list("Report", fields=["name", "ref_doctype", "report_type"], page_length=1000), "workflows": [{**w, "states": frappe.get_doc("Workflow", w.name).states, "transitions": frappe.get_doc("Workflow", w.name).transitions} for w in workflows]}
+
+
+@frappe.whitelist()
+def evidence_access(company, sources):
+    """Recheck historical evidence under the viewing user's current ERP identity."""
+    company_access(company)
+    sources = frappe.parse_json(sources)
+    if not isinstance(sources, list) or len(sources) > 200:
+        frappe.throw("Invalid source checks")
+    records_cache, reports_cache = {}, {}
+    output = []
+    for source in sources:
+        allowed = True
+        try:
+            modules, reports = source.get("modules", []), source.get("reports", [])
+            if len(modules) > 100 or len(reports) > 100:
+                frappe.throw("Too many evidence sources")
+            for requested in modules:
+                m = mapping(requested["module"], company)
+                if not frappe.has_permission(m["doctype"], "read"):
+                    frappe.throw("Source access denied", frappe.PermissionError)
+                def paths(fields, prefix=""):
+                    result = set()
+                    for f in fields:
+                        result.add(prefix + f["name"])
+                        result.update(paths(f.get("fields", []), prefix + f["name"] + "."))
+                    return result
+                readable = paths(project_fields(m.get("fields", []), m["doctype"]))
+                if not set(requested["fields"]).issubset(readable):
+                    frappe.throw("Field access denied", frappe.PermissionError)
+                if len(requested["names"]) > 100:
+                    frappe.throw("Too many evidence records")
+                for name in requested["names"]:
+                    key = (m["id"], name)
+                    if key not in records_cache:
+                        load_doc(m, name, company)
+                        records_cache[key] = True
+            for requested in reports:
+                alias = requested["report"]
+                r = next((r for r in config().get("reports", []) if r["id"] == alias and r.get("readValidated")), None)
+                if not r:
+                    frappe.throw("Report access denied", frappe.PermissionError)
+                key = (alias, json.dumps(requested["filters"], sort_keys=True))
+                if key not in reports_cache:
+                    fresh = report(alias, company, requested["filters"])
+                    approved = r.get("aiFields", [])
+                    reports_cache[key] = {"rows": [{k: v for k, v in row.items() if k in approved} for row in fresh["rows"]], "totalRow": {k: v for k, v in fresh["totalRow"].items() if k in approved} if fresh.get("totalRow") else None}
+                # Report permissions can filter individual rows. A changed snapshot is
+                # hidden until refreshed, rather than disclosing stale restricted rows.
+                if reports_cache[key] != {"rows": requested["rows"], "totalRow": requested.get("totalRow")}:
+                    frappe.throw("Report evidence changed", frappe.PermissionError)
+        except (frappe.PermissionError, frappe.DoesNotExistError):
+            allowed = False
+        output.append({"id": source["id"], "allowed": allowed})
+    return output

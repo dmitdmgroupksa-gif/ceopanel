@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { ERPNextError } from "@/lib/erpnext-client"
-import { loadSnapshot } from "@/lib/erpnext-server"
+import { humanTool } from "@/lib/mcp/client"
 
 export const dynamic = "force-dynamic"
 export async function GET(request: Request) {
@@ -10,12 +10,14 @@ export async function GET(request: Request) {
   if (![30, 90, 365].includes(days))
     return NextResponse.json(
       { error: "Choose a supported reporting period." },
-      { status: 400, headers }
+      { status: 400, headers },
     )
   try {
     return NextResponse.json(
-      await loadSnapshot(days, params.get("company") || undefined),
-      { headers }
+      await humanTool(params.get("company") || undefined, "company_snapshot", {
+        days,
+      }),
+      { headers },
     )
   } catch (error) {
     return NextResponse.json(
@@ -25,7 +27,7 @@ export async function GET(request: Request) {
             ? error.message
             : "Company data could not be loaded.",
       },
-      { status: error instanceof ERPNextError ? error.status : 502, headers }
+      { status: error instanceof ERPNextError ? error.status : 502, headers },
     )
   }
 }

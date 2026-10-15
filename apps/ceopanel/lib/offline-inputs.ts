@@ -7,6 +7,7 @@ export type OfflineInput = {
   module: string
   values: RecordValues
   photos: File[]
+  photoNames?: string[]
   createdAt: string
 }
 function open(): Promise<IDBDatabase> {
@@ -38,6 +39,7 @@ async function operation<T>(
       db.close()
       reject(transaction.error)
     }
+    transaction.onabort = transaction.onerror
   })
 }
 export async function offlineInputs(owner: string, company: string) {
@@ -47,10 +49,38 @@ export async function offlineInputs(owner: string, company: string) {
   )
 }
 export async function saveOfflineInput(input: OfflineInput) {
-  const all = await operation("readonly", (store) => store.getAll())
-  if (all.length >= 20)
-    throw new Error("The device queue is full. Submit or remove a saved draft.")
-  await operation("readwrite", (store) => store.put(input))
+  const db = await open()
+  await new Promise<void>((resolve, reject) => {
+    // Capacity check and insert share a transaction, including across browser tabs.
+    const transaction = db.transaction("drafts", "readwrite"),
+      store = transaction.objectStore("drafts")
+    let capacityError: Error | undefined
+    const keys = store.getAllKeys()
+    keys.onsuccess = () => {
+      if (keys.result.length >= 20 && !keys.result.includes(input.id)) {
+        capacityError = new Error(
+          "The device queue is full. Submit or remove a saved draft.",
+        )
+        transaction.abort()
+      } else
+        store.put({
+          ...input,
+          photoNames: input.photos.map((photo) => photo.name),
+        })
+    }
+    transaction.oncomplete = () => {
+      db.close()
+      resolve()
+    }
+    transaction.onabort = transaction.onerror = () => {
+      db.close()
+      reject(
+        capacityError ||
+          transaction.error ||
+          new Error("Device draft could not be saved."),
+      )
+    }
+  })
 }
 export async function removeOfflineInput(id: string) {
   await operation("readwrite", (store) => store.delete(id))

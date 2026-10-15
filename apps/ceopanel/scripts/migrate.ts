@@ -12,5 +12,8 @@ await database().query(
     "utf8",
   ),
 )
+await database().query(
+  await readFile(new URL("../db/004-mcp.sql", import.meta.url), "utf8"),
+)
 console.log("Platform migrations applied. ERPNext was not modified.")
 await database().end()

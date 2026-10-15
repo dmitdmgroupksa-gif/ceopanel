@@ -1,4 +1,4 @@
-import { workspaceList, workspaceSave } from "@/lib/workspace-server"
+import { humanTool } from "@/lib/mcp/client"
 import {
   queryCompany,
   workspaceBody,
@@ -12,11 +12,12 @@ export async function GET(request: Request, context: Context) {
     const { moduleId } = await context.params
     const query = new URL(request.url).searchParams
     return workspaceResponse(
-      await workspaceList(moduleId, queryCompany(request), {
+      await humanTool(queryCompany(request), "workspace_list", {
+        module: moduleId,
         search: query.get("search") || "",
         offset: Number(query.get("offset") || 0),
         limit: Number(query.get("limit") || 20),
-      })
+      }),
     )
   } catch (cause) {
     return workspaceError(cause)
@@ -27,10 +28,11 @@ export async function POST(request: Request, context: Context) {
     const body = await workspaceBody(request)
     const { moduleId } = await context.params
     return workspaceResponse(
-      await workspaceSave(moduleId, queryCompany(request), {
+      await humanTool(queryCompany(request), "workspace_save", {
+        module: moduleId,
         values: body.values,
       }),
-      201
+      201,
     )
   } catch (cause) {
     return workspaceError(cause)

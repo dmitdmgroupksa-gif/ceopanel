@@ -1,28 +1,59 @@
 import "server-only"
 import { randomUUID, createHash } from "node:crypto"
 import { z } from "zod"
-import { database, transaction, audit } from "./db"
-import { agentAccess, moduleAccess, type UserContext } from "./policy"
+import { database, transaction } from "./db"
+import {
+  agentAccess,
+  moduleAccess,
+  companyValues,
+  type UserContext,
+} from "./policy"
 import { platformConfig } from "./config"
 import type { AgentId, ActionPayload, Proposal } from "./catalog"
 import { client } from "../erpnext-server"
 import { ERPNextError } from "../erpnext-client"
 import { requiredValues, validateValues } from "../workspace"
-import { verifiedReceipt } from "./receipts"
+import { verifiedReceipt, executionAuthorization } from "./receipts"
+import { permittedEvidence } from "./evidence"
 
-export const actionSchema = z
-  .object({
-    kind: z.enum(["create", "update", "workflow", "message"]),
-    module: z.string().min(1),
-    name: z.string().optional(),
-    modified: z.string().optional(),
-    values: z.record(z.string(), z.unknown()).optional(),
-    action: z.string().optional(),
-    channel: z.enum(["email", "whatsapp"]).optional(),
-    recipient: z.string().optional(),
-    text: z.string().max(10000).optional(),
-  })
-  .strict()
+const moduleId = z.string().min(1).max(140)
+const recordIdentity = {
+  module: moduleId,
+  name: z.string().min(1).max(140),
+  modified: z.string().min(1).max(140),
+}
+export const actionSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("create"),
+      module: moduleId,
+      values: z.record(z.string(), z.unknown()),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("update"),
+      ...recordIdentity,
+      values: z.record(z.string(), z.unknown()),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("workflow"),
+      ...recordIdentity,
+      action: z.string().min(1).max(140),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("message"),
+      ...recordIdentity,
+      channel: z.enum(["email", "whatsapp"]),
+      recipient: z.string().min(1).max(254).optional(),
+      text: z.string().trim().min(1).max(10000),
+    })
+    .strict(),
+])
 export function canReview(
   context: UserContext,
   proposal: Pick<Proposal, "agent" | "company">,
@@ -53,19 +84,19 @@ async function validateAction(
   )
   if (!schema.ready)
     throw new ERPNextError("Module schema is awaiting validation.", 409)
+  if (
+    schema.module?.id !== mapping.id ||
+    schema.module.doctype !== mapping.doctype
+  )
+    throw new ERPNextError(
+      "ERP schema does not match the configured module.",
+      409,
+    )
   if (!schema.permissions.read)
     throw new ERPNextError("Record access denied.", 403)
   if (payload.kind === "create" || payload.kind === "update") {
     if (!schema.permissions[payload.kind === "create" ? "create" : "edit"])
       throw new ERPNextError("Record write access denied.", 403)
-    payload.values = validateValues(payload.values, schema.fields)
-    if (schema.companyField)
-      payload.values[schema.companyField] = context.company
-    if (payload.kind === "create")
-      requiredValues(
-        payload.values as import("../workspace").RecordValues,
-        schema.fields,
-      )
   }
   if (payload.kind !== "create") {
     if (!payload.name || !payload.modified)
@@ -114,11 +145,15 @@ async function validateAction(
         )
       payload.recipient = recipient
     }
-    if (payload.kind === "update")
-      payload.values = validateValues(
-        payload.values,
-        schema.fields,
-        record.docstatus === 1,
+    if (payload.kind === "update") validateRecordValues(record.docstatus === 1)
+    if (
+      payload.kind === "workflow" &&
+      (!schema.permissions.edit ||
+        !record.workflowActions?.includes(payload.action!))
+    )
+      throw new ERPNextError(
+        "This native workflow transition is not currently available.",
+        409,
       )
   }
   if (
@@ -129,7 +164,27 @@ async function validateAction(
       "This native workflow action is not configured.",
       409,
     )
+  if (payload.kind === "create") validateRecordValues(false)
   return payload
+
+  function validateRecordValues(submitted: boolean) {
+    const values = companyValues(
+      payload.values,
+      schema.companyField,
+      context.company,
+    )
+    try {
+      const validated = validateValues(values, schema.fields, submitted)
+      if (schema.companyField) validated[schema.companyField] = context.company
+      if (payload.kind === "create") requiredValues(validated, schema.fields)
+      payload.values = validated
+    } catch (error) {
+      throw new ERPNextError(
+        error instanceof Error ? error.message : "Invalid record fields.",
+        400,
+      )
+    }
+  }
 }
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`
@@ -155,7 +210,20 @@ export async function propose(
 ) {
   const { agent: definition } = agentAccess(context, agent)
   const requestHash = createHash("sha256")
-    .update(canonical(input))
+    .update(
+      canonical(
+        attachments.length
+          ? {
+              input,
+              attachments: attachments.map(({ filename, mime, checksum }) => ({
+                filename,
+                mime,
+                checksum,
+              })),
+            }
+          : input,
+      ),
+    )
     .digest("hex")
   if (requestId) {
     const prior = (
@@ -213,7 +281,7 @@ export async function propose(
           "Request identity conflicts with another proposal.",
           409,
         )
-      return true
+      return prior.status as Proposal["status"]
     }
     for (const file of attachments)
       await db.query(
@@ -234,25 +302,44 @@ export async function propose(
           `${definition.name}: approval requested`,
         ],
       )
-    return false
+    return null
   })
-  return { id, status: "pending", approvalRequired: true, duplicate }
+  return {
+    id,
+    status: duplicate ?? "pending",
+    approvalRequired: true,
+    duplicate: duplicate !== null,
+  }
 }
 export async function listProposals(context: UserContext) {
-  const rows = (
-    await database().query<Proposal>(
-      "SELECT * FROM proposals WHERE company=$1 ORDER BY created_at DESC LIMIT 200",
-      [context.company],
-    )
-  ).rows
-  const visible = rows.filter((p) => {
+  const allowed = Object.keys(platformConfig().agents).filter((id) => {
     try {
-      agentAccess(context, p.agent)
-      return p.proposer === context.user || canReview(context, p)
+      agentAccess(context, id)
+      return true
     } catch {
       return false
     }
   })
+  const reviewing = allowed.filter((id) =>
+    canReview(context, { agent: id as AgentId, company: context.company }),
+  )
+  const rows = (
+    await database().query<Proposal>(
+      "SELECT * FROM proposals WHERE company=$1 AND agent=ANY($2::text[]) AND (proposer=$3 OR agent=ANY($4::text[])) ORDER BY created_at DESC LIMIT 200",
+      [context.company, allowed, context.user, reviewing],
+    )
+  ).rows
+  const visible = await permittedEvidence(
+    context,
+    rows.filter((p) => {
+      try {
+        agentAccess(context, p.agent)
+        return p.proposer === context.user || canReview(context, p)
+      } catch {
+        return false
+      }
+    }),
+  )
   const attachments = (
     await database().query(
       "SELECT id,proposal,filename FROM proposal_attachments WHERE proposal=ANY($1::uuid[])",
@@ -271,11 +358,7 @@ export async function review(
   revision: number,
   decision: "approve" | "reject",
 ) {
-  if (decision === "approve" && !process.env.ERPNEXT_RECEIPT_SECRET)
-    throw new ERPNextError(
-      "ERP receipt verification awaits configuration.",
-      409,
-    )
+  id = id.toLowerCase()
   const proposal = await transaction(async (db) => {
     const row = (
       await db.query<Proposal>(
@@ -290,8 +373,21 @@ export async function review(
         "This proposal has already changed or been reviewed.",
         409,
       )
-    if (decision === "approve")
+    if (decision === "approve") {
+      if (!(await permittedEvidence(context, [row])).length)
+        throw new ERPNextError(
+          "Proposal sources are no longer available to your account.",
+          403,
+        )
+      if (row.payload.kind === "message" && row.payload.channel === "whatsapp")
+        (await import("./channels")).assertWhatsAppConfigured()
+      else if (!process.env.ERPNEXT_RECEIPT_SECRET)
+        throw new ERPNextError(
+          "ERP receipt verification awaits configuration.",
+          409,
+        )
       await validateAction(context, row.agent, row.payload)
+    }
     await db.query(
       "UPDATE proposals SET status=$2,approver=$3,updated_at=now() WHERE id=$1",
       [id, decision === "reject" ? "rejected" : "executing", context.user],
@@ -321,7 +417,13 @@ export async function review(
           ).bridge("execute_proposal", {
             proposal: id,
             company: context.company,
-            payload: proposal.payload,
+            payload: JSON.stringify(proposal.payload),
+            authorization: executionAuthorization(
+              id,
+              context.company,
+              JSON.stringify(proposal.payload),
+              context.user,
+            ),
           })
     if (proposal.payload.channel !== "whatsapp")
       verifiedReceipt(
@@ -330,18 +432,25 @@ export async function review(
         context.company,
         proposal.payload.module,
         proposal.payload.name,
+        proposal.payload,
+        context.user,
       )
-    await database().query(
-      "UPDATE proposals SET status='executed',result=$2,updated_at=now() WHERE id=$1",
-      [id, JSON.stringify(result)],
-    )
-    await audit(context.user, context.company, "proposal.executed", id)
+    await confirmExecution(context, id, result, "proposal.executed")
     return { status: "executed", result }
   } catch {
-    await database().query(
-      "UPDATE proposals SET status='needs_reconciliation',updated_at=now() WHERE id=$1",
+    const uncertain = await database().query(
+      "UPDATE proposals SET status='needs_reconciliation',updated_at=now() WHERE id=$1 AND status='executing' RETURNING id",
       [id],
     )
+    if (!uncertain.rowCount) {
+      const confirmed = (
+        await database().query(
+          "SELECT status,result FROM proposals WHERE id=$1",
+          [id],
+        )
+      ).rows[0]
+      if (confirmed?.status === "executed") return confirmed
+    }
     throw new ERPNextError(
       "Execution outcome requires reconciliation. Do not repeat this action.",
       409,
@@ -349,6 +458,7 @@ export async function review(
   }
 }
 export async function reconcile(context: UserContext, id: string) {
+  id = id.toLowerCase()
   const p = (
     await database().query<Proposal>("SELECT * FROM proposals WHERE id=$1", [
       id,
@@ -383,13 +493,29 @@ export async function reconcile(context: UserContext, id: string) {
       context.company,
       p.payload.module,
       p.payload.name,
+      p.payload,
+      p.approver,
     )
-  await database().query(
-    "UPDATE proposals SET status='executed',result=$2,updated_at=now() WHERE id=$1",
-    [id, JSON.stringify(result)],
-  )
-  await audit(context.user, context.company, "proposal.reconciled", id)
+  await confirmExecution(context, id, result, "proposal.reconciled")
   return { status: "executed", result }
+}
+async function confirmExecution(
+  context: UserContext,
+  id: string,
+  result: unknown,
+  event: string,
+) {
+  await transaction(async (db) => {
+    const updated = await db.query(
+      "UPDATE proposals SET status='executed',result=$2,updated_at=now() WHERE id=$1 AND status IN ('executing','needs_reconciliation') RETURNING id",
+      [id, JSON.stringify(result)],
+    )
+    if (updated.rowCount)
+      await db.query(
+        "INSERT INTO audit_events(actor,company,event,target) VALUES($1,$2,$3,$4)",
+        [context.user, context.company, event, id],
+      )
+  })
 }
 export async function editProposal(
   context: UserContext,
@@ -397,6 +523,7 @@ export async function editProposal(
   revision: number,
   input: unknown,
 ) {
+  id = id.toLowerCase()
   return transaction(async (db) => {
     const row = (
       await db.query<Proposal>(
@@ -417,7 +544,7 @@ export async function editProposal(
       throw new ERPNextError("This proposal can no longer be edited.", 409)
     const payload = await validateAction(context, row.agent, input)
     await db.query(
-      "UPDATE proposals SET payload=$2,request_hash=$3,revision=revision+1,status='pending',approver=NULL,result=NULL,updated_at=now() WHERE id=$1",
+      "UPDATE proposals SET payload=$2,request_hash=$3,evidence='[]'::jsonb,revision=revision+1,status='pending',approver=NULL,result=NULL,updated_at=now() WHERE id=$1",
       [
         id,
         JSON.stringify(payload),
@@ -428,6 +555,17 @@ export async function editProposal(
       "INSERT INTO audit_events(actor,company,event,target) VALUES($1,$2,'proposal.edited',$3)",
       [context.user, context.company, id],
     )
+    const { agent } = agentAccess(context, row.agent)
+    for (const owner of platformConfig().agents[row.agent]?.approvers ?? [])
+      await db.query(
+        "INSERT INTO notifications(id,owner,company,title,href) VALUES($1,$2,$3,$4,'/approvals')",
+        [
+          randomUUID(),
+          owner,
+          context.company,
+          `${agent.name}: approval requested`,
+        ],
+      )
     return {
       id,
       revision: revision + 1,

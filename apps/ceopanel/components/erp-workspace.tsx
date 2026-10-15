@@ -31,6 +31,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableFooter,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { DashboardContext } from "@/lib/dashboard-server"
@@ -659,6 +660,14 @@ export function ERPWorkspace({
                             (column) => row[column.key] ?? "",
                           ),
                         ),
+                        ...(reportData.totalRow
+                          ? [
+                              reportData.columns.map(
+                                (column) =>
+                                  reportData.totalRow![column.key] ?? "",
+                              ),
+                            ]
+                          : []),
                       ])
                     }
                   >
@@ -688,6 +697,20 @@ export function ERPWorkspace({
                         </TableRow>
                       ))}
                     </TableBody>
+                    {reportData.totalRow && (
+                      <TableFooter>
+                        <TableRow>
+                          {reportData.columns.map((column) => (
+                            <TableCell
+                              key={column.key}
+                              className="first:pl-6 font-medium"
+                            >
+                              {reportData.totalRow![column.key] ?? ""}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      </TableFooter>
+                    )}
                   </Table>
                   {reportData.rows.length === 0 && (
                     <p className="p-8 text-center text-sm text-muted-foreground">

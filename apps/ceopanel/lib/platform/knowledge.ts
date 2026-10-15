@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { mkdir, writeFile, readFile, rm } from "node:fs/promises"
 import path from "node:path"
 import OpenAI from "openai"
-import { database, transaction, audit } from "./db"
+import { database, transaction } from "./db"
 import { collectionAccess, type UserContext } from "./policy"
 import { platformConfig } from "./config"
 import { jobQueue } from "./queue"
@@ -88,23 +88,44 @@ export async function upload(
   if (existing.rowCount) return { id: existing.rows[0].id, duplicate: true }
   await mkdir(path.dirname(privatePath(id)), { recursive: true })
   await writeFile(privatePath(id), buffer, { flag: "wx", mode: 0o600 })
+  let saved: { id: string; duplicate: boolean }
   try {
-    await database().query(
-      "INSERT INTO knowledge_documents(id,company,owner,collection,title,filename,mime,checksum) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
-      [
-        id,
-        context.company,
-        context.user,
-        collection,
-        path.basename(file.name),
-        path.basename(file.name),
-        file.type || "application/octet-stream",
-        checksum,
-      ],
-    )
+    saved = await transaction(async (db) => {
+      const inserted = await db.query(
+        "INSERT INTO knowledge_documents(id,company,owner,collection,title,filename,mime,checksum) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(company,collection,checksum) DO NOTHING RETURNING id",
+        [
+          id,
+          context.company,
+          context.user,
+          collection,
+          path.basename(file.name),
+          path.basename(file.name),
+          file.type || "application/octet-stream",
+          checksum,
+        ],
+      )
+      if (!inserted.rowCount) {
+        const prior = (
+          await db.query(
+            "SELECT id FROM knowledge_documents WHERE company=$1 AND collection=$2 AND checksum=$3",
+            [context.company, collection, checksum],
+          )
+        ).rows[0]
+        return { id: prior.id, duplicate: true }
+      }
+      await db.query(
+        "INSERT INTO audit_events(actor,company,event,target) VALUES($1,$2,'knowledge.uploaded',$3)",
+        [context.user, context.company, id],
+      )
+      return { id, duplicate: false }
+    })
   } catch (error) {
     await rm(privatePath(id))
     throw error
+  }
+  if (saved.duplicate) {
+    await rm(privatePath(id), { force: true })
+    return saved
   }
   // The document row is a durable outbox: reconciliation schedules uploads if Redis is unavailable.
   try {
@@ -112,7 +133,6 @@ export async function upload(
   } catch {
     /* worker reconciliation recovers */
   }
-  await audit(context.user, context.company, "knowledge.uploaded", id)
   return { id, status: "queued" }
 }
 export async function documents(context: UserContext) {
@@ -142,8 +162,9 @@ export async function ingest(id: string) {
     !process.env.OPENAI_EMBEDDING_MODEL ||
     !process.env.OPENAI_API_KEY
   )
-    throw new Error(
-      "Document AI processing awaits approval and embedding configuration",
+    throw new ERPNextError(
+      "Document AI processing awaits approval and embedding configuration.",
+      409,
     )
   const text = redactRestrictedText(
     await extractText(await readFile(privatePath(id)), doc.filename),
@@ -197,7 +218,7 @@ export async function searchKnowledge(context: UserContext, query: string) {
   ).data[0].embedding
   return (
     await database().query(
-      "SELECT d.id,d.title,d.version,d.created_at,k.chunk,k.content FROM knowledge_chunks k JOIN knowledge_documents d ON d.id=k.document_id WHERE d.company=$1 AND d.collection=ANY($2::text[]) AND d.status='ready' AND k.model=$3 ORDER BY k.embedding <=> $4::vector LIMIT 6",
+      "SELECT d.id,d.title,d.collection,d.version,d.created_at,k.chunk,k.content FROM knowledge_chunks k JOIN knowledge_documents d ON d.id=k.document_id WHERE d.company=$1 AND d.collection=ANY($2::text[]) AND d.status='ready' AND k.model=$3 ORDER BY k.embedding <=> $4::vector LIMIT 6",
       [context.company, allowed, model, JSON.stringify(vector)],
     )
   ).rows

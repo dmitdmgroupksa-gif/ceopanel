@@ -101,11 +101,15 @@ export function Dashboard({
   const sequence = useRef(0)
   const { resolvedTheme, setTheme } = useTheme()
   const definition = findDashboard(active)!
+  const permitted =
+    !context?.dashboardIds || context.dashboardIds.includes(active)
   const visibleDashboards = context?.dashboardIds
     ? dashboards.filter((item) => context.dashboardIds!.includes(item.id))
     : dashboards
   const visibleData =
-    data.dashboardId === active && data.company === (context?.company ?? null)
+    permitted &&
+    data.dashboardId === active &&
+    data.company === (context?.company ?? null)
       ? data
       : emptyDashboard(definition, config.today, days, context?.company)
 
@@ -156,6 +160,10 @@ export function Dashboard({
     controller.current = abort
     setBusy(true)
     setError(null)
+    if (!permitted) {
+      setBusy(false)
+      return
+    }
     try {
       const params = new URLSearchParams({ days: String(days) })
       if (context?.company) params.set("company", context.company)
@@ -184,7 +192,7 @@ export function Dashboard({
     } finally {
       if (token === sequence.current) setBusy(false)
     }
-  }, [active, days, context?.company])
+  }, [active, days, context?.company, permitted])
 
   useEffect(() => {
     void refresh()
@@ -208,7 +216,7 @@ export function Dashboard({
 
   function navigate(id: string) {
     const selected = findDashboard(id)
-    if (selected) {
+    if (selected && visibleDashboards.some((d) => d.id === selected.id)) {
       setActive(selected.id)
       window.history.pushState(null, "", `#${selected.id}`)
     }
@@ -388,9 +396,17 @@ export function Dashboard({
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm">
             <p className="text-muted-foreground">
               <span className="font-medium text-foreground">
-                {t("Dashboard data setup pending.")}
+                {t(
+                  visibleData.status === "ready"
+                    ? "Company data connected."
+                    : "Dashboard data setup pending.",
+                )}
               </span>{" "}
-              Your company data will appear as each dashboard is connected.
+              {t(
+                visibleData.status === "ready"
+                  ? "Figures follow the selected company and reporting period."
+                  : "Your company data will appear as each dashboard is connected.",
+              )}
             </p>
             <Badge variant="outline" className="gap-1.5 font-normal">
               <span
@@ -418,10 +434,18 @@ export function Dashboard({
                 {context?.company || config.companyName} / Dashboards
               </p>
               <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">
-                {t(definition.title)}
+                {t(
+                  visibleDashboards.length
+                    ? definition.title
+                    : "No dashboards assigned.",
+                )}
               </h1>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                {t(definition.description)}
+                {t(
+                  visibleDashboards.length
+                    ? definition.description
+                    : "Ask your administrator to configure your department views.",
+                )}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -430,6 +454,7 @@ export function Dashboard({
                   aria-label={t("Choose dashboard")}
                   className="h-9 max-w-full appearance-none rounded-md border bg-background py-1 pl-3 pr-8 text-sm shadow-xs"
                   value={active}
+                  disabled={!visibleDashboards.length}
                   onChange={(event) => navigate(event.target.value)}
                 >
                   {visibleDashboards.map((item) => (
@@ -468,7 +493,7 @@ export function Dashboard({
                 variant="outline"
                 size="sm"
                 className="h-9"
-                disabled={busy}
+                disabled={busy || !visibleDashboards.length}
                 onClick={() => void refresh()}
               >
                 {busy ? (
@@ -488,7 +513,7 @@ export function Dashboard({
               {busy
                 ? t("Loading dashboard…")
                 : visibleData.updatedAt
-                  ? `Last updated ${new Date(visibleData.updatedAt).toLocaleTimeString("en", { timeZone: config.timezone, hour: "2-digit", minute: "2-digit" })}`
+                  ? `${t("Last updated")} ${new Date(visibleData.updatedAt).toLocaleTimeString(locale, { timeZone: config.timezone, hour: "2-digit", minute: "2-digit" })}`
                   : t("Awaiting your data source")}
             </span>
           </div>

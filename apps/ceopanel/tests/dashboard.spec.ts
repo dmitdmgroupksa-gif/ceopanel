@@ -1,6 +1,36 @@
 import { test, expect, type Page } from "@playwright/test"
 import { dashboards, emptyDashboard } from "../lib/dashboards"
 
+test("an authenticated department with no assigned dashboards sees a clear empty state", async ({
+  page,
+}) => {
+  await page.route("**/api/erpnext/session", (route) =>
+    route.fulfill({ json: { ok: true } }),
+  )
+  await page.route("**/api/erpnext/context**", (route) =>
+    route.fulfill({
+      json: {
+        user: "employee@example.com",
+        company: "Durar",
+        currency: "SAR",
+        companies: [{ name: "Durar", default_currency: "SAR" }],
+        siteUrl: "https://example.frappe.cloud",
+        dashboardIds: [],
+      },
+    }),
+  )
+  await page.goto("/")
+  await openLogin(page)
+  await page
+    .getByRole("button", { name: "Sign in to ERPNext", exact: true })
+    .click()
+  await expect(
+    page.getByRole("heading", { name: "No dashboards assigned." }),
+  ).toBeVisible()
+  await expect(page.getByRole("tablist").getByRole("tab")).toHaveCount(0)
+  await expect(page.getByLabel("Choose dashboard")).toBeDisabled()
+})
+
 async function openLogin(page: Page) {
   await page
     .getByRole("button", { name: "Connect ERPNext", exact: true })
@@ -24,25 +54,25 @@ test("all 18 CEO tabs are reachable without loading guessed business data", asyn
   for (const dashboard of dashboards) {
     await tabs.getByRole("tab", { name: dashboard.title, exact: true }).click()
     await expect(
-      page.getByRole("heading", { name: dashboard.title, exact: true })
+      page.getByRole("heading", { name: dashboard.title, exact: true }),
     ).toBeVisible()
     await expect(
       page.getByText(
-        "Awaiting your data source. No company records have been loaded for this dashboard."
-      )
+        "Awaiting your data source. No company records have been loaded for this dashboard.",
+      ),
     ).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "Export", exact: true })
+      page.getByRole("button", { name: "Export", exact: true }),
     ).toBeDisabled()
     await expect(page.getByText("Awaiting data", { exact: true })).toHaveCount(
-      4
+      4,
     )
   }
   expect(requests.some((url) => url.includes("/api/erpnext/snapshot"))).toBe(
-    false
+    false,
   )
   expect(
-    requests.some((url) => url.startsWith("https://dmgroup.frappe.cloud"))
+    requests.some((url) => url.startsWith("https://dmgroup.frappe.cloud")),
   ).toBe(false)
   const width = await page.evaluate(() => ({
     doc: document.documentElement.scrollWidth,
@@ -63,28 +93,28 @@ test("direct links, quick dashboard selection, and period filters work", async (
 }) => {
   await page.goto("/#stock")
   await expect(
-    page.getByRole("heading", { name: "Stock Dashboard", exact: true })
+    page.getByRole("heading", { name: "Stock Dashboard", exact: true }),
   ).toBeVisible()
   await page.getByLabel("Choose dashboard").selectOption("attendance")
   await expect(
-    page.getByRole("heading", { name: "Attendance Dashboard", exact: true })
+    page.getByRole("heading", { name: "Attendance Dashboard", exact: true }),
   ).toBeVisible()
   await expect(page).toHaveURL(/#attendance$/)
   const loaded = page.waitForResponse(
     (response) =>
       response.url().includes("/api/dashboards/attendance?") &&
       response.url().includes("days=30") &&
-      response.status() === 200
+      response.status() === 200,
   )
   await page.getByLabel("Reporting period").selectOption("30")
   await loaded
   await expect(page.getByLabel("Reporting period")).toHaveValue("30")
   await expect(
-    page.getByRole("button", { name: "Refresh", exact: true })
+    page.getByRole("button", { name: "Refresh", exact: true }),
   ).toBeEnabled()
   await page.goBack()
   await expect(
-    page.getByRole("heading", { name: "Stock Dashboard", exact: true })
+    page.getByRole("heading", { name: "Stock Dashboard", exact: true }),
   ).toBeVisible()
 })
 
@@ -92,7 +122,7 @@ test("ERPNext sign-in does not assign any dashboard's data source", async ({
   page,
 }) => {
   await page.route("**/api/erpnext/session", (route) =>
-    route.fulfill({ json: { ok: true } })
+    route.fulfill({ json: { ok: true } }),
   )
   await page.route("**/api/erpnext/context**", (route) => {
     const params = new URL(route.request().url()).searchParams
@@ -115,17 +145,17 @@ test("ERPNext sign-in does not assign any dashboard's data source", async ({
     .getByRole("button", { name: "Sign in to ERPNext", exact: true })
     .click()
   await expect(
-    page.getByText("ERPNext connected", { exact: true })
+    page.getByText("ERPNext connected", { exact: true }),
   ).toBeVisible()
   await expect(
-    page.getByText("Dashboard data setup pending.", { exact: true })
+    page.getByText("Dashboard data setup pending.", { exact: true }),
   ).toBeVisible()
   await page.getByLabel("Select company").selectOption("Branch company")
   await expect(page.getByLabel("Select company")).toHaveValue("Branch company")
   await expect(page.getByText("Awaiting data", { exact: true })).toHaveCount(4)
   await page.getByRole("button", { name: "Sign out", exact: true }).click()
   await expect(
-    page.getByRole("button", { name: "Connect ERPNext", exact: true })
+    page.getByRole("button", { name: "Connect ERPNext", exact: true }),
   ).toBeVisible()
 })
 
@@ -158,15 +188,15 @@ test("a future adapter can populate metrics, charts, records, search, and export
   await expect(page.getByText("SAR 120,000", { exact: true })).toBeVisible()
   await page.getByLabel("Search dashboard records").fill("no match")
   await expect(
-    page.getByText("No records in this view.", { exact: true })
+    page.getByText("No records in this view.", { exact: true }),
   ).toBeVisible()
   await page.getByLabel("Search dashboard records").fill("Team A")
   await expect(
-    page.getByRole("cell", { name: "Team A", exact: true })
+    page.getByRole("cell", { name: "Team A", exact: true }),
   ).toBeVisible()
   const download = page.waitForEvent("download")
   await page.getByRole("button", { name: "Export", exact: true }).click()
   expect((await download).suggestedFilename()).toBe(
-    "sales-comparison-2026-10-14.csv"
+    "sales-comparison-2026-10-14.csv",
   )
 })

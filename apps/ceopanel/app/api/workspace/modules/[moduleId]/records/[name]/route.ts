@@ -1,4 +1,4 @@
-import { workspaceGet, workspaceSave } from "@/lib/workspace-server"
+import { humanTool } from "@/lib/mcp/client"
 import {
   queryCompany,
   workspaceBody,
@@ -11,7 +11,10 @@ export async function GET(request: Request, context: Context) {
   try {
     const { moduleId, name } = await context.params
     return workspaceResponse(
-      await workspaceGet(moduleId, name, queryCompany(request))
+      await humanTool(queryCompany(request), "workspace_record", {
+        module: moduleId,
+        name,
+      }),
     )
   } catch (cause) {
     return workspaceError(cause)
@@ -22,11 +25,12 @@ export async function PUT(request: Request, context: Context) {
     const body = await workspaceBody(request)
     const { moduleId, name } = await context.params
     return workspaceResponse(
-      await workspaceSave(moduleId, queryCompany(request), {
+      await humanTool(queryCompany(request), "workspace_save", {
+        module: moduleId,
         name,
         values: body.values,
         modified: typeof body.modified === "string" ? body.modified : undefined,
-      })
+      }),
     )
   } catch (cause) {
     return workspaceError(cause)

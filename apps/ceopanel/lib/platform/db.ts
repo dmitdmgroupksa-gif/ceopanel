@@ -2,7 +2,7 @@ import { Pool, type PoolClient } from "pg"
 import { ERPNextError } from "../erpnext-client"
 let pool: Pool | undefined
 export function database() {
-  if (!process.env.DATABASE_URL)
+  if (!process.env.DATABASE_URL && !process.env.PGHOST)
     throw new ERPNextError("Platform database is awaiting configuration.", 503)
   return (pool ??= new Pool({
     connectionString: process.env.DATABASE_URL,

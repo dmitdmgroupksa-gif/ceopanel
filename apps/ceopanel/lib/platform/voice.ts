@@ -2,8 +2,9 @@ import "server-only"
 import OpenAI from "openai"
 import { agentAccess, type UserContext } from "./policy"
 import { capabilities, platformConfig } from "./config"
-import { audit, database } from "./db"
+import { transaction, database } from "./db"
 import { ERPNextError } from "../erpnext-client"
+import { permittedEvidence } from "./evidence"
 export async function voiceSession(
   context: UserContext,
   agent: string,
@@ -17,18 +18,7 @@ export async function voiceSession(
     !process.env.OPENAI_TRANSCRIPTION_MODEL
   )
     throw new ERPNextError("Voice awaits validated model configuration.", 409)
-  const recent = (
-    await database().query(
-      "SELECT count(*)::int AS count FROM audit_events WHERE actor=$1 AND company=$2 AND event='voice.started' AND created_at>now()-interval '1 minute'",
-      [context.user, context.company],
-    )
-  ).rows[0].count
-  if (recent >= 3)
-    throw new ERPNextError(
-      "Please wait before starting another voice session.",
-      429,
-    )
-  await audit(context.user, context.company, "voice.started", agent)
+  await reserveVoice(context, "voice.started", agent, 3)
   const form = new FormData()
   form.set("sdp", sdp)
   form.set(
@@ -68,13 +58,18 @@ export async function speakRun(context: UserContext, id: string) {
     throw new ERPNextError("Speech output awaits model configuration.", 409)
   const run = (
     await database().query(
-      "SELECT agent,response FROM agent_runs WHERE id=$1 AND owner=$2 AND company=$3 AND status='completed'",
+      "SELECT id,agent,response,evidence FROM agent_runs WHERE id=$1 AND owner=$2 AND company=$3 AND status='completed'",
       [id, context.user, context.company],
     )
   ).rows[0]
   if (!run) throw new ERPNextError("Conversation not found.", 404)
   agentAccess(context, run.agent)
-  await audit(context.user, context.company, "voice.spoken", id)
+  if (!(await permittedEvidence(context, [run])).length)
+    throw new ERPNextError(
+      "Conversation sources are no longer available to your account.",
+      403,
+    )
+  await reserveVoice(context, "voice.spoken", id, 5)
   const result = await new OpenAI().audio.speech.create({
     model: process.env.OPENAI_SPEECH_MODEL,
     voice: process.env.OPENAI_SPEECH_VOICE,
@@ -87,5 +82,32 @@ export async function speakRun(context: UserContext, id: string) {
       "Cache-Control": "private, no-store",
       Vary: "Cookie",
     },
+  })
+}
+async function reserveVoice(
+  context: UserContext,
+  event: string,
+  target: string,
+  limit: number,
+) {
+  await transaction(async (db) => {
+    await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+      `voice:${context.company}:${context.user}`,
+    ])
+    const recent = (
+      await db.query(
+        "SELECT count(*)::int AS count FROM audit_events WHERE actor=$1 AND company=$2 AND event=$3 AND created_at>now()-interval '1 minute'",
+        [context.user, context.company, event],
+      )
+    ).rows[0].count
+    if (recent >= limit)
+      throw new ERPNextError(
+        "Please wait before starting another voice session.",
+        429,
+      )
+    await db.query(
+      "INSERT INTO audit_events(actor,company,event,target) VALUES($1,$2,$3,$4)",
+      [context.user, context.company, event, target],
+    )
   })
 }

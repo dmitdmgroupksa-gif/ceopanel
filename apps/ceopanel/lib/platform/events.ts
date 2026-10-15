@@ -4,7 +4,8 @@ export function validSignature(
   signature: string | null,
   secret: string | undefined,
 ) {
-  if (!signature || !secret) return false
+  if (!signature || !secret || !/^[A-Za-z0-9+/]{43}=$/.test(signature))
+    return false
   const expected = createHmac("sha256", secret).update(body).digest()
   const supplied = Buffer.from(signature, "base64")
   return (

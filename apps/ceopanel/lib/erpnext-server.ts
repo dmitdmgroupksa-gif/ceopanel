@@ -1,5 +1,6 @@
 import "server-only"
 import { cookies } from "next/headers"
+import { delegatedSid } from "./mcp/erp-identity"
 import { ERPNextClient, ERPNextError, type Filter } from "./erpnext-client"
 import {
   businessDate,
@@ -25,14 +26,14 @@ export function siteUrl() {
   ) {
     throw new ERPNextError(
       "ERPNext configuration requires an HTTPS site origin.",
-      500
+      500,
     )
   }
   return url.origin
 }
 
 export async function client() {
-  const sid = (await cookies()).get(SESSION_COOKIE)?.value
+  const sid = delegatedSid() || (await cookies()).get(SESSION_COOKIE)?.value
   if (!sid || !/^[A-Za-z0-9_-]+$/.test(sid))
     throw new ERPNextError("Please sign in to ERPNext.", 401)
   return new ERPNextClient(siteUrl(), sid)
@@ -40,7 +41,7 @@ export async function client() {
 
 export async function loadSnapshot(
   days: number,
-  selectedCompany?: string
+  selectedCompany?: string,
 ): Promise<Snapshot> {
   const erp = await client()
   const user = await erp.user()
@@ -54,7 +55,7 @@ export async function loadSnapshot(
   if (!company)
     throw new ERPNextError(
       "Your account cannot access the selected ERPNext company.",
-      403
+      403,
     )
   const period = makePeriod(days, businessDate(new Date(), timezone))
   const companyFilter: Filter[] = [["company", "=", company.name]]
@@ -176,7 +177,7 @@ export async function loadSnapshot(
           },
         ] as const
       }
-    })
+    }),
   )
   return {
     mode: "live",

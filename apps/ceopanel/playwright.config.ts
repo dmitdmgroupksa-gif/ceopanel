@@ -7,7 +7,7 @@ export default defineConfig({
   workers: 3,
   timeout: 60000,
   use: {
-    baseURL: `http://localhost:${port}`,
+    baseURL: process.env.CEOPANEL_TEST_BASE_URL || `http://localhost:${port}`,
     channel: process.platform === "win32" ? "msedge" : undefined,
     trace: "retain-on-failure",
   },
@@ -24,10 +24,12 @@ export default defineConfig({
       use: { ...devices["iPhone 13"], defaultBrowserType: "chromium" },
     },
   ],
-  webServer: {
-    command: `npx next dev --webpack --port ${port}`,
-    url: `http://localhost:${port}/agents`,
-    reuseExistingServer: false,
-    timeout: 120000,
-  },
+  webServer: process.env.CEOPANEL_TEST_BASE_URL
+    ? undefined
+    : {
+        command: `npx next dev --webpack --port ${port}`,
+        url: `http://localhost:${port}/agents`,
+        reuseExistingServer: false,
+        timeout: 120000,
+      },
 })

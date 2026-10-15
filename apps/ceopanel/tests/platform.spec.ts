@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 test("eight agents are visible without fabricated live data or enabled writes", async ({
   page,
 }) => {
@@ -35,6 +35,153 @@ test("eight agents are visible without fabricated live data or enabled writes", 
     width: innerWidth,
   }))
   expect(size.doc).toBeLessThanOrEqual(size.width)
+})
+async function connectedPortal(page: Page, voice = false) {
+  await page.route("**/api/erpnext/context**", (route) =>
+    route.fulfill({
+      json: {
+        user: "ceo@example.com",
+        company: "Durar",
+        companies: [{ name: "Durar", default_currency: "SAR" }],
+        currency: "SAR",
+        siteUrl: "https://example.frappe.cloud",
+      },
+    }),
+  )
+  await page.route("**/api/platform/status", (route) =>
+    route.fulfill({
+      json: {
+        ai: true,
+        database: true,
+        queue: true,
+        embeddings: true,
+        environment: "staging",
+        modules: 1,
+        agents: [],
+        channels: { voice, email: false, whatsapp: false },
+      },
+    }),
+  )
+  await page.route("**/api/platform/agents?**", (route) =>
+    route.fulfill({ json: [{ id: "executive", available: true }] }),
+  )
+}
+test("conversation history retains sources and shows newly completed runs", async ({
+  page,
+}) => {
+  await connectedPortal(page)
+  await page.route("**/api/platform/runs?**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "8c761995-a0c4-427b-bbf4-9c4d05fdc7d8",
+          agent: "executive",
+          prompt: "Saved question",
+          response: "Saved answer",
+          evidence: [{ source: "Customer", name: "CUST-17" }],
+          status: "completed",
+          created_at: "2026-10-14T12:00:00Z",
+        },
+      ],
+    }),
+  )
+  await page.route("**/api/platform/agents/run?**", (route) =>
+    route.fulfill({
+      json: {
+        id: "ed31dd98-d61c-4b3b-9285-0c1db4a20a79",
+        answer: "Prepared briefing",
+        evidence: [{ source: "Verified report", name: "BRF-22" }],
+      },
+    }),
+  )
+  await page.goto("/agents")
+  await page.getByRole("button").filter({ hasText: "Saved question" }).click()
+  await expect(page.getByText("Saved answer", { exact: true })).toBeVisible()
+  await page.getByText("Sources", { exact: true }).click()
+  await expect(page.locator("pre")).toContainText("CUST-17")
+  await page.getByLabel("Ask your department assistant").fill("New question")
+  await page.getByRole("button", { name: "Send", exact: true }).click()
+  await expect(
+    page.getByText("Prepared briefing", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button").filter({ hasText: "New question" }),
+  ).toBeVisible()
+})
+test("received channel messages are visible in the personal inbox", async ({
+  page,
+}) => {
+  await connectedPortal(page)
+  await page.route("**/api/platform/notifications?**", (route) =>
+    route.fulfill({ json: [] }),
+  )
+  await page.route("**/api/platform/inbox?**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          provider_id: "message-1",
+          channel: "whatsapp",
+          content: "Please review the approved site update.",
+          created_at: "2026-10-14T12:00:00Z",
+        },
+      ],
+    }),
+  )
+  await page.goto("/notifications")
+  await expect(
+    page.getByText("Please review the approved site update."),
+  ).toBeVisible()
+})
+test("cancelling a pending microphone request stops a late media stream", async ({
+  page,
+}) => {
+  await connectedPortal(page, true)
+  await page.route("**/api/platform/runs?**", (route) =>
+    route.fulfill({ json: [] }),
+  )
+  await page.addInitScript(() => {
+    const state = window as typeof window & {
+      resolveMicrophone?: () => void
+      micStops: number
+    }
+    state.micStops = 0
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: () =>
+          new Promise((resolve) => {
+            state.resolveMicrophone = () =>
+              resolve({
+                getTracks: () => [
+                  {
+                    stop: () => {
+                      state.micStops++
+                    },
+                  },
+                ],
+              })
+          }),
+      },
+    })
+  })
+  await page.goto("/agents")
+  await page.getByRole("button", { name: "Start voice", exact: true }).click()
+  await page.getByRole("button", { name: "Stop voice", exact: true }).click()
+  await page.evaluate(() =>
+    (
+      window as typeof window & { resolveMicrophone: () => void }
+    ).resolveMicrophone(),
+  )
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as typeof window & { micStops: number }).micStops,
+      ),
+    )
+    .toBe(1)
+  await expect(
+    page.getByRole("button", { name: "Start voice", exact: true }),
+  ).toBeEnabled()
 })
 test("Arabic persists across routes and keeps all 18 top dashboard tabs", async ({
   page,

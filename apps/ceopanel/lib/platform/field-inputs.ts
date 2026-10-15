@@ -8,8 +8,7 @@ import { privatePath, maxUpload } from "./knowledge"
 import type { UserContext } from "./policy"
 import type { AgentId, Proposal } from "./catalog"
 import { ERPNextError } from "../erpnext-client"
-import { platformConfig } from "./config"
-import { agentAccess } from "./policy"
+import { agentAccess, moduleAccess } from "./policy"
 export async function fieldInput(
   context: UserContext,
   agent: AgentId,
@@ -18,10 +17,8 @@ export async function fieldInput(
   files: File[],
 ) {
   const input = actionSchema.parse(payload)
-  if (
-    input.kind !== "create" ||
-    !platformConfig().modules.some((m) => m.id === input.module && m.fieldInput)
-  )
+  const mapping = moduleAccess(context, agent, input.module)
+  if (input.kind !== "create" || !mapping.fieldInput || !mapping.writeValidated)
     throw new ERPNextError("Field input is not enabled for this module.", 403)
   if (
     files.length > 5 ||

@@ -1,4 +1,4 @@
-import { workspaceAction } from "@/lib/workspace-server"
+import { humanTool } from "@/lib/mcp/client"
 import {
   queryCompany,
   workspaceBody,
@@ -8,19 +8,18 @@ import {
 export const dynamic = "force-dynamic"
 export async function POST(
   request: Request,
-  context: { params: Promise<{ moduleId: string; name: string }> }
+  context: { params: Promise<{ moduleId: string; name: string }> },
 ) {
   try {
     const body = await workspaceBody(request)
     const { moduleId, name } = await context.params
     return workspaceResponse(
-      await workspaceAction(
-        moduleId,
+      await humanTool(queryCompany(request), "workspace_action", {
+        module: moduleId,
         name,
-        queryCompany(request),
-        String(body.action || ""),
-        String(body.modified || "")
-      )
+        action: String(body.action || ""),
+        modified: String(body.modified || ""),
+      }),
     )
   } catch (cause) {
     return workspaceError(cause)

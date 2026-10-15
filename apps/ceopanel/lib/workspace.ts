@@ -146,6 +146,7 @@ export type ReportDefinition = {
 export type ReportData = {
   columns: { key: string; label: string }[]
   rows: Record<string, string | number | null>[]
+  totalRow?: Record<string, string | number | null> | null
 }
 export function editableValues(
   fields: Field[],

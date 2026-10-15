@@ -32,6 +32,7 @@ import { useLocale } from "./locale-provider"
 import { LoginDialog } from "./login-dialog"
 import { VoiceInput, ReadAnswer } from "./voice-input"
 import { FieldUpdates } from "./field-updates"
+import { MCPSettings } from "./mcp-settings"
 
 export type PlatformMode =
   | "agents"
@@ -55,6 +56,7 @@ type Run = {
   agent: string
   prompt: string
   response: string
+  evidence: unknown[]
   status: string
   created_at: string
 }
@@ -80,7 +82,7 @@ type SearchResult = {
   content: string
   version: number
 }
-async function api<T>(
+async function requestApi<T>(
   path: string,
   company?: string,
   body?: unknown,
@@ -112,6 +114,7 @@ async function api<T>(
   return result
 }
 export function ApprovalInbox({ company }: { company?: string }) {
+  const api = requestApi
   const { t } = useLocale()
   const [rows, setRows] = useState<
       (Proposal & {
@@ -310,11 +313,31 @@ export function PlatformPanel({
     [query, setQuery] = useState(""),
     [results, setResults] = useState<SearchResult[]>([]),
     [notices, setNotices] = useState<Notice[]>([]),
+    [inbox, setInbox] = useState<
+      {
+        provider_id: string
+        channel: string
+        content: string
+        created_at: string
+      }[]
+    >([]),
     [inventory, setInventory] = useState<unknown>(null)
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
   const [runId, setRunId] = useState("")
   const token = useRef(0)
+  async function api<T>(
+    path: string,
+    company?: string,
+    body?: unknown,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const id = token.current
+    const result = await requestApi<T>(path, company, body, signal)
+    if (id !== token.current)
+      throw new DOMException("Company view changed", "AbortError")
+    return result
+  }
   const title = {
     agents: "Agents",
     knowledge: "Knowledge",
@@ -335,7 +358,7 @@ export function PlatformPanel({
     setContext(body)
   }
   useEffect(() => {
-    void api<Status>("status")
+    void requestApi<Status>("status")
       .then(setStatus)
       .catch(() => {})
     void connect().catch(() => {})
@@ -350,6 +373,7 @@ export function PlatformPanel({
     setRuns([])
     setDocs([])
     setNotices([])
+    setInbox([])
     setInventory(null)
     setAvailable([])
     setCollections([])
@@ -376,13 +400,19 @@ export function PlatformPanel({
         }
       }
       if (mode === "notifications") {
-        const data = await api<Notice[]>("notifications", company)
-        if (id === token.current) setNotices(data)
+        const [data, messages] = await Promise.all([
+          api<Notice[]>("notifications", company),
+          api<typeof inbox>("inbox", company),
+        ])
+        if (id === token.current) {
+          setNotices(data)
+          setInbox(messages)
+        }
       }
     } catch (e) {
       if (id === token.current) setError((e as Error).message)
     }
-  }, [company, mode])
+  }, [company, mode, context?.user])
   useEffect(() => {
     void refresh()
     return () => {
@@ -575,6 +605,20 @@ export function PlatformPanel({
                           setRunId(result.id)
                           setSources(result.evidence)
                           setPrompt("")
+                          setRuns((rows) =>
+                            [
+                              {
+                                id: result.id,
+                                agent: selected,
+                                prompt,
+                                response: result.answer,
+                                evidence: result.evidence,
+                                status: "completed",
+                                created_at: new Date().toISOString(),
+                              },
+                              ...rows,
+                            ].slice(0, 50),
+                          )
                         }
                       })
                     }}
@@ -620,7 +664,9 @@ export function PlatformPanel({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {!runs.length && <Empty label="No conversations yet." />}
+                  {!runs.some((r) => r.agent === selected) && (
+                    <Empty label="No conversations yet." />
+                  )}
                   {runs
                     .filter((r) => r.agent === selected)
                     .map((run) => (
@@ -630,7 +676,7 @@ export function PlatformPanel({
                         onClick={() => {
                           setAnswer(run.response || t(run.status))
                           setRunId(run.id)
-                          setSources([])
+                          setSources(run.evidence || [])
                         }}
                       >
                         <p className="line-clamp-2">{run.prompt}</p>
@@ -790,6 +836,12 @@ export function PlatformPanel({
                       <Badge variant="outline">{t(doc.status)}</Badge>
                       {doc.status === "failed" && (
                         <Button
+                          disabled={
+                            busy ||
+                            !collections.some(
+                              (c) => c.id === doc.collection && c.upload,
+                            )
+                          }
                           variant="outline"
                           size="sm"
                           onClick={() =>
@@ -812,13 +864,39 @@ export function PlatformPanel({
           </>
         )}
         {mode === "approvals" && context && (
-          <ApprovalInbox key={company} company={company} />
+          <ApprovalInbox key={`${context.user}:${company}`} company={company} />
         )}
         {mode === "field-updates" && (
-          <FieldUpdates key={company} context={context} />
+          <FieldUpdates key={`${context?.user}:${company}`} context={context} />
         )}
         {mode === "notifications" && (
           <>
+            {inbox.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">{t("Inbox")}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {inbox.map((message) => (
+                    <article
+                      key={message.provider_id}
+                      className="rounded-md border p-3"
+                    >
+                      <p className="text-xs text-muted-foreground">
+                        {message.channel} ·{" "}
+                        {new Date(message.created_at).toLocaleString(locale)}
+                      </p>
+                      <p
+                        dir="auto"
+                        className="mt-2 whitespace-pre-wrap break-words text-sm"
+                      >
+                        {message.content}
+                      </p>
+                    </article>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
             {!notices.length && <Empty label="No notifications yet." />}
             {notices.map((n) => (
               <Card key={n.id}>
@@ -828,7 +906,14 @@ export function PlatformPanel({
                     className="flex items-center gap-3 text-sm"
                   >
                     <Bell className="size-4" />
-                    {n.title}
+                    {(() => {
+                      const agent = agents.find(
+                        (a) => n.title === `${a.name}: approval requested`,
+                      )
+                      return agent
+                        ? `${locale === "ar" ? agent.ar : agent.name}: ${t("Approval requested")}`
+                        : t(n.title)
+                    })()}
                   </Link>
                   {!n.read_at && (
                     <Button
@@ -851,6 +936,7 @@ export function PlatformPanel({
         )}
         {mode === "integrations" && (
           <>
+            <MCPSettings key={company} company={company || ""} />
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[
                 {
@@ -905,7 +991,22 @@ export function PlatformPanel({
                     >
                       <span>{t(channel)}</span>
                       <Badge variant="outline">
-                        {t(channel === "Web portal" ? "Ready" : "Later phase")}
+                        {t(
+                          channel === "Web portal"
+                            ? "Ready"
+                            : channel === "Email" ||
+                                channel === "WhatsApp" ||
+                                channel === "Voice"
+                              ? status?.channels[
+                                  channel.toLowerCase() as
+                                    | "email"
+                                    | "whatsapp"
+                                    | "voice"
+                                ]
+                                ? "Enabled"
+                                : "Awaiting configuration"
+                              : "Later phase",
+                        )}
                       </Badge>
                     </div>
                   ))}

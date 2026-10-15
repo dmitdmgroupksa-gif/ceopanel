@@ -3,6 +3,21 @@ import { platformConfig } from "./config"
 import { agents, type AgentId } from "./catalog"
 import type { DashboardContext } from "../dashboard-server"
 export type UserContext = DashboardContext & { roles: string[] }
+export function companyValues(
+  input: unknown,
+  field: string | undefined,
+  company: string,
+): Record<string, unknown> {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new ERPNextError("Enter valid record fields.", 400)
+  const values = { ...input } as Record<string, unknown>
+  if (field) {
+    if (Object.hasOwn(values, field) && values[field] !== company)
+      throw new ERPNextError("Record company mismatch.", 403)
+    delete values[field]
+  }
+  return values
+}
 export function agentAccess(context: UserContext, id: string) {
   const agent = agents.find((a) => a.id === id),
     mapping = platformConfig().agents[id]

@@ -5,7 +5,12 @@ x-platform: &platform
     context: ..
   env_file: ${PLATFORM_ENV_FILE:-.env}
   environment:
-    DATABASE_URL: postgres://ceopanel:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/ceopanel
+    DATABASE_URL: ""
+    PGHOST: postgres
+    PGPORT: "5432"
+    PGUSER: ceopanel
+    PGDATABASE: ceopanel
+    PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     REDIS_URL: redis://redis:6379
     PLATFORM_CONFIG_PATH: /config/platform.config.json
     DOCUMENT_STORAGE_PATH: /app/.private-documents
@@ -28,7 +33,14 @@ services:
     restart: unless-stopped
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
     volumes: ["redis:/data"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -47,7 +59,13 @@ services:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/platform/status').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/platform/health',{signal:AbortSignal.timeout(8000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 30s
       retries: 3
   worker:
@@ -61,7 +79,12 @@ services:
     ports: ["80:80", "443:443"]
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST:?Set PUBLIC_HOST}
-    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
+    volumes:
+      [
+        "./Caddyfile:/etc/caddy/Caddyfile:ro",
+        "caddy_data:/data",
+        "caddy_config:/config",
+      ]
     depends_on: [web]
     restart: unless-stopped
 volumes:

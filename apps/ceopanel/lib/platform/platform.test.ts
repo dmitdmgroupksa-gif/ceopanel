@@ -6,6 +6,7 @@ import { parseConfig } from "./config"
 import { validSignature, eventId } from "./events"
 import { redactRestrictedText } from "./privacy"
 import { validateValues } from "../workspace"
+import { validMetaSignature } from "./channels"
 
 describe("platform activation boundaries", () => {
   it("ships all eight departments and keeps integrations inactive by default", () => {
@@ -46,6 +47,30 @@ describe("platform activation boundaries", () => {
       "Duplicate",
     )
   })
+  it("rejects duplicate and mistyped integration references before activation", () => {
+    expect(() =>
+      parseConfig({
+        agents: { sales: { roles: ["Sales User"], modules: ["typo"] } },
+      }),
+    ).toThrow("source references")
+    expect(() => parseConfig({ agents: { typo: { roles: [] } } })).toThrow(
+      "Unknown agent",
+    )
+    const collection = {
+      id: "policies",
+      title: "Policies",
+      roles: ["Reader"],
+      uploadRoles: ["Reader"],
+    }
+    expect(() =>
+      parseConfig({ collections: [collection, collection] }),
+    ).toThrow("Duplicate collection")
+    expect(() =>
+      parseConfig({
+        collections: [{ ...collection, uploadRoles: ["Uploader"] }],
+      }),
+    ).toThrow("read access")
+  })
 })
 describe("signed event intake", () => {
   it("verifies exact payloads and denies missing, tampered and malformed signatures", () => {
@@ -58,8 +83,21 @@ describe("signed event intake", () => {
     expect(validSignature(body, null, secret)).toBe(false)
     expect(validSignature(body, signature, undefined)).toBe(false)
     expect(validSignature(body, "invalid", secret)).toBe(false)
+    expect(validSignature(body, signature + "garbage", secret)).toBe(false)
     expect(eventId(body)).toBe(eventId(body))
     expect(eventId(body + " ")).not.toBe(eventId(body))
+  })
+  it("rejects malformed WhatsApp signatures even when they start with a valid digest", () => {
+    vi.stubEnv("WHATSAPP_APP_SECRET", "secret")
+    try {
+      const body = "{}",
+        signature =
+          "sha256=" + createHmac("sha256", "secret").update(body).digest("hex")
+      expect(validMetaSignature(body, signature)).toBe(true)
+      expect(validMetaSignature(body, signature + "garbage")).toBe(false)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
 describe("approved input protection", () => {

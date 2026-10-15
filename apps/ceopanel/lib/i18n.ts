@@ -1,5 +1,16 @@
 import { arabicExtra } from "./i18n-extra"
 export const arabic: Record<string, string> = {
+  Inbox: "صندوق الوارد",
+  "Approval requested": "طُلبت الموافقة",
+  "WhatsApp message received": "وصلت رسالة واتساب",
+  awaiting_configuration: "بانتظار الإعداد",
+  "Company data connected.": "تم ربط بيانات الشركة.",
+  "Figures follow the selected company and reporting period.":
+    "تعرض الأرقام حسب الشركة والفترة المحددتين.",
+  "No dashboards assigned.": "لم تُعيّن لوحات معلومات لحسابك.",
+  "Ask your administrator to configure your department views.":
+    "اطلب من المسؤول إعداد لوحات معلومات إدارتك.",
+  "Last updated": "آخر تحديث",
   "CEO management platform": "منصة الإدارة التنفيذية",
   Dashboards: "لوحات المعلومات",
   "ERP workspace": "مساحة عمل ERP",

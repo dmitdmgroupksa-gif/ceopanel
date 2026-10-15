@@ -1,18 +1,29 @@
 # Durar Masagh enterprise platform
 
+Business actions use the shared [MCP plugin and tool layer](./MCP.md), including the
+dashboard's AI agents and authenticated external clients. External access stays disabled
+until the public origin, authentication secret, approved AI fields, and staging mappings are set.
+
 ## Implemented application
 
 The existing 18 dashboard tabs and 14 ERP record modules remain. Added web routes:
 `/agents`, `/knowledge`, `/approvals`, `/notifications`, `/field-updates`, and `/integrations`.
 Navigation stays at the top. English and Arabic share the same pages with RTL support.
 
-Eight configured agent profiles use OpenAI Responses with read-record, validated-report,
+Eight configured agent profiles use OpenAI Responses with schema-discovery, read-record, validated-report,
 knowledge-search and proposal tools. Record fields are allowlisted at both the application
 and ERP bridge. Financial dashboard aggregates use complete ERP report results; invalid
 columns and numeric values fail instead of showing fabricated totals. Responses and
 sources are persisted per user/company. Department role mappings also limit dashboard
 navigation. Assign the CEO's actual ERP role to the Executive profile and departmental
 agent profiles during discovery; no assumed role name grants CEO authority.
+
+Saved answers, speech output and approval evidence recheck current collection, record and
+field access. Report evidence is checked against a fresh permission-scoped report result;
+changed snapshots are hidden until a new run is prepared. Missing source metadata or ERP
+access fails closed. Native appended total rows are returned separately as `totalRow`;
+dashboard aggregates count and sum detail records only. Agent usage totals include every
+model call, including calls in runs that subsequently fail.
 
 AI changes produce immutable pending proposals. Managers inspect their exact payload,
 source evidence, and field-photo attachments, then approve or reject. Editing a pending
@@ -30,6 +41,14 @@ ERP data on demand and refresh every 60 seconds; there is no shared business-dat
 Webhook events record source freshness. Worker maintenance timestamps describe platform
 reconciliation, not a successful background ERP data sync.
 
+ERP execution also requires a short-lived application HMAC authorization binding the payload,
+proposal, company and approving ERP user; the bridge checks it before native writes.
+Receipts bind the exact serialized approved payload and approving ERP user. Upgrade the
+ERP bridge and web app together; older receipts without those bindings require administrator
+investigation and cannot confirm execution. Delayed or out-of-order WhatsApp callbacks cannot
+downgrade a confirmed delivery, and callbacks must match the configured business phone,
+approved proposal, recipient and provider message identity.
+
 Documents support text-based PDF, XLSX, CSV, Markdown and text, up to 10 MB. Scanned PDFs
 need OCR and are marked failed. Approved collections and current role/company access
 are checked before vector search. Pattern redaction removes recognizable credentials
@@ -44,6 +63,10 @@ five PNG/JPEG photos totaling 10 MB. Repeated submissions return the existing pr
 conflicting payloads cannot reuse its UUID. Photos remain proposal evidence in private
 platform storage; approved record values are written to ERP. Automatic attachment transfer
 into ERP File records is not enabled until the company's attachment mapping is supplied.
+
+Offline request identities also bind photo contents and filenames. Device queue capacity
+checks and insertion are atomic across browser tabs. Partial edits to existing ERP child
+rows preserve server-owned and uneditable fields, while cross-parent row IDs are rejected.
 
 ## Configure and validate staging
 
@@ -79,6 +102,11 @@ into ERP File records is not enabled until the company's attachment mapping is s
 Configuration is loaded at startup for catalogs/adapters; restart web/worker services after
 changing mappings. An unconfigured integration remains visibly unavailable.
 
+Configuration validation catches duplicate identifiers, unknown agent/source references,
+invalid period filters and upload roles without read access. Collections list all uploader
+roles in `roles` as well as `uploadRoles`. Missing AI/embedding configuration keeps document
+ingestion awaiting configuration; the worker resumes it once configuration is enabled.
+
 ## API and rollout interfaces
 
 All application endpoints are under `/api/platform/`. They return private/no-store JSON,
@@ -88,6 +116,7 @@ request and a verified ERP session. Sensitive operations never fall back to an a
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
 | `status` | GET | Public configuration availability without secrets or company data |
+| `health` | GET | PostgreSQL/Redis readiness; 503 when either dependency is unavailable |
 | `agents`, `runs` | GET | Agent availability and the current user's permitted history |
 | `agents/run` | POST | Run an agent in English/Arabic; five runs per user/minute |
 | `proposals` | GET | Own proposals and permitted approval reviews |
@@ -146,6 +175,8 @@ disabled until historical datasets, definitions and baseline evaluation results 
 
 `npm run typecheck`, `npm test`, `npm run test:browser`, and `npm run build` validate the web app.
 Browser tests use dedicated port 3107 to avoid another application on port 3000.
+`python -m unittest discover -s integrations/frappe/tests -v` from the repository root checks
+bridge child-row protection, create-only field permissions and report total-row handling.
 PostgreSQL lifecycle/agent evaluation tests run only when `PLATFORM_TEST_DATABASE_URL` points
 to a disposable database; without it they are explicitly skipped. They use mocked OpenAI/ERP
 services and do not spend API credits or mutate the company's ERP. The tests exercise real

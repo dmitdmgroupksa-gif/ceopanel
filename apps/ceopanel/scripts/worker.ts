@@ -2,6 +2,8 @@ import { Worker } from "bullmq"
 import { jobQueue, queueName, redisConnection } from "../lib/platform/queue"
 import { database } from "../lib/platform/db"
 import { ingest } from "../lib/platform/knowledge"
+import { capabilities } from "../lib/platform/config"
+import { ERPNextError } from "../lib/erpnext-client"
 // This worker never holds ERP user sessions and never executes business mutations.
 const worker = new Worker(
   queueName,
@@ -11,15 +13,23 @@ const worker = new Worker(
         await ingest(job.data.id)
       } catch (error) {
         await database().query(
-          "UPDATE knowledge_documents SET status='failed' WHERE id=$1",
-          [job.data.id],
+          "UPDATE knowledge_documents SET status=$2 WHERE id=$1 AND status<>'ready'",
+          [
+            job.data.id,
+            error instanceof ERPNextError && error.status === 409
+              ? "awaiting_configuration"
+              : job.attemptsMade + 1 >= (job.opts.attempts || 1)
+                ? "failed"
+                : "queued",
+          ],
         )
         throw error
       }
     } else if (job.name === "reconcile") {
       const documents = (
         await database().query(
-          "SELECT id FROM knowledge_documents WHERE status='queued'",
+          "SELECT id FROM knowledge_documents WHERE status='queued' OR (status='awaiting_configuration' AND $1)",
+          [capabilities().embeddings],
         )
       ).rows
       for (const doc of documents) {
@@ -43,6 +53,9 @@ const worker = new Worker(
   { connection: redisConnection(), concurrency: 2 },
 )
 worker.on("failed", (job) => console.error("Platform job failed", job?.id))
+worker.on("error", (error) =>
+  console.error("Platform worker error", error.message),
+)
 await jobQueue().upsertJobScheduler(
   "reconciliation",
   { every: 300000 },

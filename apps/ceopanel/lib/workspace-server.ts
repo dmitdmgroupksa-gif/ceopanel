@@ -1,4 +1,5 @@
 import "server-only"
+import { companyValues } from "./platform/policy"
 import { loadContext, type DashboardContext } from "./dashboard-server"
 import { ERPNextError } from "./erpnext-client"
 import { configuredWorkspace } from "./platform/erp-adapters"
@@ -153,10 +154,15 @@ export async function workspaceSave(
   }
   let values: RecordValues
   try {
-    values = validateValues(input.values, schema.fields, submitted)
+    values = validateValues(
+      companyValues(input.values, schema.companyField, context.company),
+      schema.fields,
+      submitted,
+    )
     if (schema.companyField) values[schema.companyField] = context.company
     if (!input.name) requiredValues(values, schema.fields)
   } catch (cause) {
+    if (cause instanceof ERPNextError) throw cause
     throw new ERPNextError(
       cause instanceof Error ? cause.message : "Invalid record values.",
       400,
@@ -225,10 +231,14 @@ export async function workspaceReport(
   const context = await loadContext(company)
   let values: RecordValues
   try {
-    values = validateValues(filters, report.filters)
+    values = validateValues(
+      companyValues(filters, report.companyField, context.company),
+      report.filters,
+    )
     if (report.companyField) values[report.companyField] = context.company
     requiredValues(values, report.filters)
   } catch (cause) {
+    if (cause instanceof ERPNextError) throw cause
     throw new ERPNextError(
       cause instanceof Error ? cause.message : "Invalid report filters.",
       400,

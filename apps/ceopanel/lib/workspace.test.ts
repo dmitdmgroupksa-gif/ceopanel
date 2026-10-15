@@ -43,7 +43,7 @@ const schema: ModuleSchema = {
       type: "text",
       required: true,
     },
-    { name: "company", label: "Company", type: "text" },
+    { name: "company", label: "Company", type: "text", readOnly: true },
     {
       name: "custom_tier",
       label: "Tier",
@@ -106,15 +106,21 @@ describe("ERP workspace guardrails", () => {
     delete workspaceAdapters.customers
     expect((await workspaceSchema("customers")).ready).toBe(false)
     await expect(
-      workspaceSave("customers", undefined, { values: {} })
+      workspaceSave("customers", undefined, { values: {} }),
     ).rejects.toMatchObject({ status: 409 })
     expect(loadContext).not.toHaveBeenCalled()
   })
-  it("forces the permitted company on new records and preserves custom fields and child rows", async () => {
+  it("preserves the locked company, custom fields and child rows while rejecting scope conflicts", async () => {
+    await expect(
+      workspaceSave("customers", "Company A", {
+        values: { customer_name: "New customer", company: "Company B" },
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(adapter.create).not.toHaveBeenCalled()
     const result = await workspaceSave("customers", "Company A", {
       values: {
         customer_name: "New customer",
-        company: "Company B",
+        company: "Company A",
         custom_tier: "Gold",
         contacts: [{ full_name: "Contact A" }],
       },
@@ -124,35 +130,37 @@ describe("ERP workspace guardrails", () => {
     expect(result.values.contacts).toEqual([{ full_name: "Contact A" }])
     expect(adapter.create).toHaveBeenCalledWith(
       companyContext,
-      expect.objectContaining({ company: "Company A" })
+      expect.objectContaining({ company: "Company A" }),
     )
   })
   it("blocks protected or unknown fields before writing", async () => {
     await expect(
       workspaceSave("customers", undefined, {
         values: { customer_name: "Customer", docstatus: 1 },
-      })
+      }),
     ).rejects.toMatchObject({ status: 400 })
     expect(adapter.create).not.toHaveBeenCalled()
     expect(() =>
-      validateValues(JSON.parse('{"__proto__":{"admin":true}}'), schema.fields)
+      validateValues(JSON.parse('{"__proto__":{"admin":true}}'), schema.fields),
     ).toThrow()
   })
   it("validates required fields, select choices, and child-table fields", async () => {
     await expect(
-      workspaceSave("customers", undefined, { values: { custom_tier: "Gold" } })
+      workspaceSave("customers", undefined, {
+        values: { custom_tier: "Gold" },
+      }),
     ).rejects.toThrow("Customer name is required")
     expect(() =>
-      validateValues({ custom_tier: "Admin" }, schema.fields)
+      validateValues({ custom_tier: "Admin" }, schema.fields),
     ).toThrow("Choose a valid")
     expect(() =>
-      validateValues({ contacts: [{ owner: "Administrator" }] }, schema.fields)
+      validateValues({ contacts: [{ owner: "Administrator" }] }, schema.fields),
     ).toThrow()
     expect(() =>
       requiredValues(
         { contacts: [{}] },
-        schema.fields.filter((field) => field.name === "contacts")
-      )
+        schema.fields.filter((field) => field.name === "contacts"),
+      ),
     ).toThrow("Full name is required")
   })
   it("refuses stale edits without calling the write adapter", async () => {
@@ -161,28 +169,28 @@ describe("ERP workspace guardrails", () => {
         name: existing.name,
         values: { notes: "Changed" },
         modified: "old-timestamp",
-      })
+      }),
     ).rejects.toMatchObject({ status: 409 })
     expect(adapter.update).not.toHaveBeenCalled()
   })
   it("rejects documents and lists belonging to another company", async () => {
     existing.values.company = "Company B"
     await expect(
-      workspaceGet("customers", existing.name)
+      workspaceGet("customers", existing.name),
     ).rejects.toMatchObject({ status: 403 })
     await expect(
       workspaceList("customers", undefined, {
         search: "",
         offset: 0,
         limit: 20,
-      })
+      }),
     ).rejects.toMatchObject({ status: 403 })
     await expect(
       workspaceSave("customers", undefined, {
         name: existing.name,
         values: { notes: "Changed" },
         modified: existing.modified,
-      })
+      }),
     ).rejects.toMatchObject({ status: 403 })
     expect(adapter.update).not.toHaveBeenCalled()
   })
@@ -194,14 +202,14 @@ describe("ERP workspace guardrails", () => {
     await expect(
       workspaceSave("customers", undefined, {
         values: { customer_name: "New" },
-      })
+      }),
     ).rejects.toMatchObject({ status: 403 })
     await expect(
       workspaceSave("customers", undefined, {
         name: existing.name,
         values: { notes: "Changed" },
         modified: existing.modified,
-      })
+      }),
     ).rejects.toMatchObject({ status: 403 })
     expect(adapter.create).not.toHaveBeenCalled()
     expect(adapter.update).not.toHaveBeenCalled()
@@ -213,7 +221,7 @@ describe("ERP workspace guardrails", () => {
         name: existing.name,
         values: { customer_name: "Changed" },
         modified: existing.modified,
-      })
+      }),
     ).rejects.toMatchObject({ status: 400 })
     expect(
       (
@@ -222,7 +230,7 @@ describe("ERP workspace guardrails", () => {
           values: { notes: "Updated note" },
           modified: existing.modified,
         })
-      ).values.notes
+      ).values.notes,
     ).toBe("Updated note")
   })
   it("uses explicit submit/cancel actions with document-state and timestamp checks", async () => {
@@ -233,9 +241,9 @@ describe("ERP workspace guardrails", () => {
           existing.name,
           undefined,
           "submit",
-          existing.modified
+          existing.modified,
         )
-      ).docstatus
+      ).docstatus,
     ).toBe(1)
     await expect(
       workspaceAction(
@@ -243,8 +251,8 @@ describe("ERP workspace guardrails", () => {
         existing.name,
         undefined,
         "cancel",
-        existing.modified
-      )
+        existing.modified,
+      ),
     ).rejects.toMatchObject({ status: 409 })
     await expect(
       workspaceAction(
@@ -252,8 +260,8 @@ describe("ERP workspace guardrails", () => {
         existing.name,
         undefined,
         "frappe.delete_doc",
-        existing.modified
-      )
+        existing.modified,
+      ),
     ).rejects.toMatchObject({ status: 400 })
     existing.docstatus = 1
     expect(
@@ -263,9 +271,9 @@ describe("ERP workspace guardrails", () => {
           existing.name,
           undefined,
           "cancel",
-          existing.modified
+          existing.modified,
         )
-      ).docstatus
+      ).docstatus,
     ).toBe(2)
   })
   it("registers custom DocTypes without hardcoded standard field names", async () => {
@@ -282,7 +290,7 @@ describe("ERP workspace guardrails", () => {
       schema: async () => ({ ...schema, module }),
     }
     expect((await workspaceSchema(module.id)).module.doctype).toBe(
-      "DM Site Visit"
+      "DM Site Visit",
     )
   })
   it("scopes custom report filters and rejects arbitrary filters", async () => {
@@ -293,21 +301,27 @@ describe("ERP workspace guardrails", () => {
       companyField: "company",
       filters: [
         { name: "from_date", label: "From date", type: "date", required: true },
-        { name: "company", label: "Company", type: "text" },
+        { name: "company", label: "Company", type: "text", readOnly: true },
       ],
     })
     const report = vi.fn(async () => ({ columns: [], rows: [] }))
     reportAdapters["company-custom-report"] = report
     await workspaceReport("company-custom-report", "Company A", {
       from_date: "2026-10-01",
-      company: "Company B",
+      company: "Company A",
     })
     expect(report).toHaveBeenCalledWith(companyContext, {
       from_date: "2026-10-01",
       company: "Company A",
     })
     await expect(
-      workspaceReport("company-custom-report", undefined, { sql: "any query" })
+      workspaceReport("company-custom-report", "Company A", {
+        from_date: "2026-10-01",
+        company: "Company B",
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+    await expect(
+      workspaceReport("company-custom-report", undefined, { sql: "any query" }),
     ).rejects.toMatchObject({ status: 400 })
   })
   it("rejects cross-site saves and invalid JSON before any adapter runs", async () => {
@@ -321,11 +335,11 @@ describe("ERP workspace guardrails", () => {
               method: "POST",
               headers: { Origin: "https://other.example" },
               body: "{}",
-            }
+            },
           ),
-          params
+          params,
         )
-      ).status
+      ).status,
     ).toBe(403)
     expect(
       (
@@ -336,11 +350,11 @@ describe("ERP workspace guardrails", () => {
               method: "POST",
               headers: { Origin: "https://panel.example" },
               body: "not-json",
-            }
+            },
           ),
-          params
+          params,
         )
-      ).status
+      ).status,
     ).toBe(400)
     expect(adapter.create).not.toHaveBeenCalled()
   })

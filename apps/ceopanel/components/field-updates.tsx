@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Upload, Wifi, WifiOff, Trash2 } from "lucide-react"
 import { Button } from "./ui/button"
 import {
@@ -40,6 +40,7 @@ export function FieldUpdates({
     [online, setOnline] = useState(true)
   const scope = context ? `?company=${encodeURIComponent(context.company)}` : ""
   const active = modules.find((m) => `${m.agent}:${m.id}` === selected)
+  const photoInput = useRef<HTMLInputElement>(null)
   const loadDrafts = useCallback(async () => {
     if (context) setDrafts(await offlineInputs(context.user, context.company))
   }, [context])
@@ -60,7 +61,9 @@ export function FieldUpdates({
     setDrafts([])
     setError("")
     if (!context) return
-    void loadDrafts()
+    void loadDrafts().catch((e) => {
+      if (current) setError(e.message)
+    })
     void fetch(`/api/platform/field-modules${scope}`, { cache: "no-store" })
       .then(async (response) => {
         const data = await response.json()
@@ -132,6 +135,7 @@ export function FieldUpdates({
         schema?.companyField ? { [schema.companyField]: context.company } : {},
       )
       setPhotos([])
+      if (photoInput.current) photoInput.current.value = ""
       await loadDrafts()
     } catch (e) {
       setError((e as Error).message)
@@ -154,7 +158,15 @@ export function FieldUpdates({
           values: draft.values,
         }),
       )
-      for (const photo of draft.photos) form.append("photos", photo)
+      draft.photos.forEach((photo, index) =>
+        form.append(
+          "photos",
+          photo,
+          draft.photoNames?.[index] ||
+            photo.name ||
+            `field-photo-${index + 1}.${photo.type === "image/png" ? "png" : "jpg"}`,
+        ),
+      )
       const response = await fetch(`/api/platform/field-updates${scope}`, {
         method: "POST",
         body: form,
@@ -210,6 +222,7 @@ export function FieldUpdates({
                 aria-label={t("Choose record type")}
                 className="h-9 w-full rounded-md border bg-background px-3 text-sm"
                 value={selected}
+                disabled={busy}
                 onChange={(e) => setSelected(e.target.value)}
               >
                 {modules.map((m) => (
@@ -235,6 +248,8 @@ export function FieldUpdates({
                 />
               )}
               <Input
+                ref={photoInput}
+                disabled={busy}
                 aria-label={t("Field photos")}
                 type="file"
                 accept="image/png,image/jpeg"
@@ -287,7 +302,9 @@ export function FieldUpdates({
                   variant="outline"
                   disabled={busy}
                   onClick={() =>
-                    void removeOfflineInput(draft.id).then(loadDrafts)
+                    void removeOfflineInput(draft.id)
+                      .then(loadDrafts)
+                      .catch((e) => setError(e.message))
                   }
                 >
                   <Trash2 />

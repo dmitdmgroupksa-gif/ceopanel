@@ -7,3 +7,7 @@ platform.config.json
 test-results
 playwright-report
 *.tsbuildinfo
+**/*.test.ts
+tests
+playwright.config.ts
+vitest.config.ts
