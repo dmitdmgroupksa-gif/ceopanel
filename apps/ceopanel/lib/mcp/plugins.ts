@@ -16,6 +16,7 @@ import { ERPNextError } from "../erpnext-client"
 import { loadDashboard } from "../dashboard-server"
 import { loadSnapshot } from "../erpnext-server"
 import { platformPlugin } from "./platform-services"
+import { externalPlugin } from "./external-plugin"
 const id = z.string().min(1).max(140),
   uuid = z.uuid(),
   values = z.record(z.string(), z.unknown())
@@ -34,6 +35,7 @@ const agentTool = (
 })
 export const businessPlugins: BusinessPlugin[] = [
   platformPlugin,
+  externalPlugin,
   {
     id: "erp",
     title: "ERP records and workflows",

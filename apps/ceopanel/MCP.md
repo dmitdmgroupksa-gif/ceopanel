@@ -7,7 +7,8 @@ connect to the Streamable HTTP endpoint at `https://YOUR-PORTAL/api/mcp`. There 
 network hop for internal operations.
 
 Plugins cover ERP records/workflows, reports/dashboards, proposals/approvals, approved
-knowledge, communications, and field/assistant services. Authentication, signed incoming ERP
+knowledge, communications, field/assistant services, and external systems/Saudi banking.
+Authentication, signed incoming ERP
 and channel events, readiness checks, and unconfigured display metadata are control-plane
 endpoints. They are not AI business tools. Workers process validated intake/indexing jobs;
 they do not turn queued AI suggestions into autonomous ERP writes.

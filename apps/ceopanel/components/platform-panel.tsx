@@ -33,6 +33,7 @@ import { LoginDialog } from "./login-dialog"
 import { VoiceInput, ReadAnswer } from "./voice-input"
 import { FieldUpdates } from "./field-updates"
 import { MCPSettings } from "./mcp-settings"
+import { InputReadiness } from "./input-readiness"
 
 export type PlatformMode =
   | "agents"
@@ -936,6 +937,7 @@ export function PlatformPanel({
         )}
         {mode === "integrations" && (
           <>
+            <InputReadiness key={`inputs:${company}`} company={company} />
             <MCPSettings key={company} company={company || ""} />
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[

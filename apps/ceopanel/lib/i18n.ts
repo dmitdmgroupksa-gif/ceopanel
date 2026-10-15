@@ -196,5 +196,14 @@ export const arabic: Record<string, string> = {
   "Execution outcome requires reconciliation. Do not repeat this action.":
     "نتيجة التنفيذ تتطلب تحققًا. لا تكرر الإجراء.",
 
+  Suppliers: "الموردون",
+  "Purchase Invoices": "فواتير المشتريات",
+  "Leave Applications": "طلبات الإجازة",
+  Tasks: "المهام",
+  Communications: "المراسلات",
+  "Bank Accounts": "الحسابات البنكية",
+  "Bank Transactions": "الحركات البنكية",
+  "Payment Entries": "قيود الدفع",
+  "Journal Entries": "القيود اليومية",
   ...arabicExtra,
 }

@@ -10,7 +10,7 @@ import { client } from "../erpnext-server"
 import { ERPNextError } from "../erpnext-client"
 import { fieldInput, attachment } from "../platform/field-inputs"
 import { voiceSession, speakRun } from "../platform/voice"
-import { readExternal } from "../platform/external"
+import { inputReadiness } from "../platform/inputs"
 const id = z.string().min(1).max(140)
 const file = z
   .object({
@@ -54,6 +54,15 @@ export const platformPlugin: BusinessPlugin = {
   title: "Field operations and assistant services",
   version: "1.0.0",
   tools: [
+    {
+      name: "input_readiness",
+      description:
+        "Inspect ERP-first input mappings and pending source configuration; this is not a live reconciliation check.",
+      schema: z.object({}).strict(),
+      audience: "human",
+      effect: "read",
+      run: async (s) => inputReadiness(s.context),
+    },
     {
       name: "record_links",
       description: "Search native permitted link-field choices.",
@@ -122,14 +131,6 @@ export const platformPlugin: BusinessPlugin = {
       audience: "human",
       effect: "read",
       run: async (s, a) => binaryResult(await attachment(s.context, a.id)),
-    },
-    {
-      name: "external_read",
-      description: "Read a validated external connector.",
-      schema: z.object({ connector: id }).strict(),
-      audience: "human",
-      effect: "read",
-      run: (s, a) => readExternal(s.context, a.connector),
     },
     {
       name: "agents_list",

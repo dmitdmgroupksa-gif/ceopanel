@@ -82,6 +82,8 @@ export async function GET(request: Request, { params }: Context) {
         await humanTool(company, "external_read", { connector: path.slice(9) }),
       )
     const reads: Record<string, string> = {
+      inputs: "input_readiness",
+      "external-sources": "external_sources",
       "field-modules": "field_modules",
       agents: "agents_list",
       proposals: "proposals_list",

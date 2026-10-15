@@ -82,6 +82,24 @@ const schema = z.object({
       }),
     )
     .default([]),
+  externalSources: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z][a-z0-9-]*$/),
+        title: z.string().min(1),
+        type: z.enum(["bank", "payment-gateway", "government", "fleet", "iot"]),
+        connection: z.enum(["erpnext", "provider"]).default("erpnext"),
+        country: z
+          .string()
+          .regex(/^[A-Z]{2}$/)
+          .optional(),
+        provider: z.string().max(140).optional(),
+        roles: z.array(z.string()).default([]),
+        modules: z.array(z.string()).default([]),
+        readValidated: z.boolean().default(false),
+      }),
+    )
+    .default([]),
   dashboards: z
     .record(
       z.string(),
@@ -135,6 +153,7 @@ export function parseConfig(input: unknown) {
   for (const [label, entries] of [
     ["report", config.reports],
     ["collection", config.collections],
+    ["external source", config.externalSources],
   ] as const)
     if (new Set(entries.map((entry) => entry.id)).size !== entries.length)
       throw new Error(`Duplicate ${label} configuration`)
@@ -209,6 +228,31 @@ export function parseConfig(input: unknown) {
   for (const c of config.collections)
     if (c.uploadRoles.some((role) => !c.roles.includes(role)))
       throw new Error("Collection upload roles must also have read access")
+  for (const source of config.externalSources) {
+    if (source.modules.some((id) => !config.modules.some((m) => m.id === id)))
+      throw new Error("External source modules must be configured")
+    if (
+      source.connection === "erpnext" &&
+      source.readValidated &&
+      (!source.modules.length ||
+        source.modules.some(
+          (id) => !config.modules.find((m) => m.id === id)?.readValidated,
+        ))
+    )
+      throw new Error("Validate ERP external source modules before activation")
+    if (
+      source.connection === "provider" &&
+      source.readValidated &&
+      !source.provider?.trim()
+    )
+      throw new Error(
+        "A verified external provider is required before activation",
+      )
+    if (source.readValidated && !source.roles.length)
+      throw new Error(
+        "External sources require permitted roles before activation",
+      )
+  }
   const identities = config.channelIdentities.map(
     (i) => `${i.channel}:${i.address.replace(/^\+/, "")}`,
   )

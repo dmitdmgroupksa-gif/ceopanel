@@ -83,6 +83,62 @@ export const standardModules = [
     doctype: "Project",
     description: "Project records and operational work.",
   },
+  {
+    id: "suppliers",
+    title: "Suppliers",
+    doctype: "Supplier",
+    description: "Supplier records and purchasing relationships.",
+  },
+  {
+    id: "purchase-invoices",
+    title: "Purchase Invoices",
+    doctype: "Purchase Invoice",
+    description: "Supplier invoices and payable workflows.",
+  },
+  {
+    id: "leave-applications",
+    title: "Leave Applications",
+    doctype: "Leave Application",
+    description: "Employee leave requests and native approvals.",
+  },
+  {
+    id: "tasks",
+    title: "Tasks",
+    doctype: "Task",
+    description: "Field work, assignments and project progress.",
+  },
+  {
+    id: "communications",
+    title: "Communications",
+    doctype: "Communication",
+    description: "Permitted ERP email and linked communication records.",
+  },
+  {
+    id: "bank-accounts",
+    title: "Bank Accounts",
+    doctype: "Bank Account",
+    description:
+      "Company bank account references under native ERP permissions.",
+  },
+  {
+    id: "bank-transactions",
+    title: "Bank Transactions",
+    doctype: "Bank Transaction",
+    description:
+      "Statement transactions already imported or synchronized into ERPNext.",
+  },
+  {
+    id: "payment-entries",
+    title: "Payment Entries",
+    doctype: "Payment Entry",
+    description: "ERP payments, receipts and their accounting workflows.",
+  },
+  {
+    id: "journal-entries",
+    title: "Journal Entries",
+    doctype: "Journal Entry",
+    description: "Native journal records and accounting adjustments.",
+  },
 ] as const
 
 export type WorkspaceModule = {

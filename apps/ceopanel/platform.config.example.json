@@ -8,28 +8,428 @@
       "doctype": "Customer",
       "description": "Customer master records; verify shared-company policy in staging.",
       "fields": [
-        { "name": "customer_name", "label": "Customer", "type": "text", "required": true },
-        { "name": "customer_group", "label": "Customer group", "type": "link" },
-        { "name": "territory", "label": "Territory", "type": "link" }
+        {
+          "name": "customer_name",
+          "label": "Customer",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "customer_group",
+          "label": "Customer group",
+          "type": "link"
+        },
+        {
+          "name": "territory",
+          "label": "Territory",
+          "type": "link"
+        }
       ],
-      "aiFields": ["customer_name", "customer_group", "territory"],
+      "aiFields": [
+        "customer_name",
+        "customer_group",
+        "territory"
+      ],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "leads",
+      "title": "Leads",
+      "doctype": "Lead",
+      "description": "Lead records and sales qualification.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "quotations",
+      "title": "Quotations",
+      "doctype": "Quotation",
+      "description": "Prepare and manage customer quotations.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "sales-orders",
+      "title": "Sales Orders",
+      "doctype": "Sales Order",
+      "description": "Manage customer orders and fulfillment.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "invoices",
+      "title": "Invoices",
+      "doctype": "Sales Invoice",
+      "description": "Sales invoices and their document lifecycle.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "delivery-notes",
+      "title": "Delivery Notes",
+      "doctype": "Delivery Note",
+      "description": "Delivery documents and shipment records.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "items",
+      "title": "Items",
+      "doctype": "Item",
+      "description": "Your item catalog and product information.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "employees",
+      "title": "Employees",
+      "doctype": "Employee",
+      "description": "Employee records and custom HR fields.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "attendance",
+      "title": "Attendance",
+      "doctype": "Attendance",
+      "description": "Attendance records and approvals.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "payroll",
+      "title": "Payroll",
+      "doctype": "Payroll Entry",
+      "description": "Payroll entries and company payroll workflows.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "expenses",
+      "title": "Expenses",
+      "doctype": "Expense Claim",
+      "description": "Employee expenses and expense claims.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "purchase-orders",
+      "title": "Purchase Orders",
+      "doctype": "Purchase Order",
+      "description": "Supplier orders and purchasing activity.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "stock",
+      "title": "Stock",
+      "doctype": "Stock Entry",
+      "description": "Stock entries and inventory workflows.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "projects",
+      "title": "Projects",
+      "doctype": "Project",
+      "description": "Project records and operational work.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "suppliers",
+      "title": "Suppliers",
+      "doctype": "Supplier",
+      "description": "Supplier records and purchasing relationships.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "purchase-invoices",
+      "title": "Purchase Invoices",
+      "doctype": "Purchase Invoice",
+      "description": "Supplier invoices and payable workflows.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "leave-applications",
+      "title": "Leave Applications",
+      "doctype": "Leave Application",
+      "description": "Employee leave requests and native approvals.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "tasks",
+      "title": "Tasks",
+      "doctype": "Task",
+      "description": "Field work, assignments and project progress.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "communications",
+      "title": "Communications",
+      "doctype": "Communication",
+      "description": "Permitted ERP email and linked communication records.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "bank-accounts",
+      "title": "Bank Accounts",
+      "doctype": "Bank Account",
+      "description": "Company bank account references under native ERP permissions.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "bank-transactions",
+      "title": "Bank Transactions",
+      "doctype": "Bank Transaction",
+      "description": "Statement transactions already imported or synchronized into ERPNext.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "payment-entries",
+      "title": "Payment Entries",
+      "doctype": "Payment Entry",
+      "description": "ERP payments, receipts and their accounting workflows.",
+      "fields": [],
+      "aiFields": [],
+      "readValidated": false,
+      "writeValidated": false,
+      "workflowActions": []
+    },
+    {
+      "id": "journal-entries",
+      "title": "Journal Entries",
+      "doctype": "Journal Entry",
+      "description": "Native journal records and accounting adjustments.",
+      "fields": [],
+      "aiFields": [],
       "readValidated": false,
       "writeValidated": false,
       "workflowActions": []
     }
   ],
   "agents": {
-    "sales": { "roles": ["Sales User", "Sales Manager"], "modules": ["customers"], "approvers": [] },
-    "finance": { "roles": ["Accounts User", "Accounts Manager"], "modules": [], "approvers": [] },
-    "inventory": { "roles": ["Stock User", "Stock Manager"], "modules": [], "approvers": [] },
-    "procurement": { "roles": ["Purchase User", "Purchase Manager"], "modules": [], "approvers": [] },
-    "logistics": { "roles": ["Stock User", "Stock Manager"], "modules": [], "approvers": [] },
-    "hr": { "roles": ["HR User", "HR Manager"], "modules": [], "approvers": [] },
-    "facilities": { "roles": [], "modules": [], "approvers": [] },
-    "executive": { "roles": [], "modules": [], "approvers": [] }
+    "sales": {
+      "roles": [
+        "Sales User",
+        "Sales Manager"
+      ],
+      "modules": [
+        "customers",
+        "leads",
+        "quotations",
+        "sales-orders",
+        "invoices",
+        "communications"
+      ],
+      "approvers": []
+    },
+    "finance": {
+      "roles": [
+        "Accounts User",
+        "Accounts Manager"
+      ],
+      "modules": [
+        "invoices",
+        "purchase-invoices",
+        "expenses",
+        "bank-accounts",
+        "bank-transactions",
+        "payment-entries",
+        "journal-entries"
+      ],
+      "approvers": []
+    },
+    "inventory": {
+      "roles": [
+        "Stock User",
+        "Stock Manager"
+      ],
+      "modules": [
+        "items",
+        "stock"
+      ],
+      "approvers": []
+    },
+    "procurement": {
+      "roles": [
+        "Purchase User",
+        "Purchase Manager"
+      ],
+      "modules": [
+        "suppliers",
+        "purchase-orders",
+        "purchase-invoices"
+      ],
+      "approvers": []
+    },
+    "logistics": {
+      "roles": [
+        "Stock User",
+        "Stock Manager"
+      ],
+      "modules": [
+        "delivery-notes"
+      ],
+      "approvers": []
+    },
+    "hr": {
+      "roles": [
+        "HR User",
+        "HR Manager"
+      ],
+      "modules": [
+        "employees",
+        "attendance",
+        "leave-applications",
+        "payroll",
+        "expenses"
+      ],
+      "approvers": []
+    },
+    "facilities": {
+      "roles": [],
+      "modules": [
+        "projects",
+        "tasks"
+      ],
+      "approvers": []
+    },
+    "executive": {
+      "roles": [],
+      "modules": [
+        "customers",
+        "leads",
+        "quotations",
+        "sales-orders",
+        "invoices",
+        "delivery-notes",
+        "items",
+        "employees",
+        "attendance",
+        "payroll",
+        "expenses",
+        "purchase-orders",
+        "stock",
+        "projects",
+        "suppliers",
+        "purchase-invoices",
+        "leave-applications",
+        "tasks",
+        "communications",
+        "bank-accounts",
+        "bank-transactions",
+        "payment-entries",
+        "journal-entries"
+      ],
+      "approvers": []
+    }
   },
   "collections": [],
   "reports": [],
   "dashboards": {},
-  "channels": { "email": false, "whatsapp": false, "voice": false }
+  "channels": {
+    "email": false,
+    "whatsapp": false,
+    "voice": false
+  },
+  "externalSources": [
+    {
+      "id": "saudi-banking-erp",
+      "title": "Saudi banking through ERPNext",
+      "type": "bank",
+      "connection": "erpnext",
+      "country": "SA",
+      "roles": [
+        "Accounts Manager"
+      ],
+      "modules": [
+        "bank-accounts",
+        "bank-transactions",
+        "payment-entries",
+        "journal-entries"
+      ],
+      "readValidated": false
+    },
+    {
+      "id": "saudi-bank-provider",
+      "title": "Optional Saudi bank or open-banking provider",
+      "type": "bank",
+      "connection": "provider",
+      "country": "SA",
+      "provider": "",
+      "roles": [],
+      "modules": [],
+      "readValidated": false
+    }
+  ]
 }

@@ -4,9 +4,12 @@ Business actions use the shared [MCP plugin and tool layer](./MCP.md), including
 dashboard's AI agents and authenticated external clients. External access stays disabled
 until the public origin, authentication secret, approved AI fields, and staging mappings are set.
 
+The [data input preparation guide](./DATA-INPUTS.md) covers the seven ERP-first input groups,
+23 prepared record types, input-readiness inventory, and Saudi banking adapter contracts.
+
 ## Implemented application
 
-The existing 18 dashboard tabs and 14 ERP record modules remain. Added web routes:
+The existing 18 dashboard tabs and 23 ERP record modules remain. Added web routes:
 `/agents`, `/knowledge`, `/approvals`, `/notifications`, `/field-updates`, and `/integrations`.
 Navigation stays at the top. English and Arabic share the same pages with RTL support.
 

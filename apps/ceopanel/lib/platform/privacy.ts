@@ -7,5 +7,8 @@ export function redactRestrictedText(text: string) {
       "[Restricted information removed]",
     )
     .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, "[Credential removed]")
-    .replace(/\bSA\d{22}\b/g, "[Bank identifier removed]")
+    .replace(
+      /\bSA(?:[ -]?\d){4}(?:[ -]?[A-Z0-9]){18}\b/gi,
+      "[Bank identifier removed]",
+    )
 }
