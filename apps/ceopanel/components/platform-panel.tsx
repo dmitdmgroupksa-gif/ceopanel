@@ -939,11 +939,13 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
         )}
         {mode === "integrations" && (
           <>
-            <InputReadiness key={`inputs:${company}`} company={company} />
             <MCPSettings
               key={`${context?.user}:${company}`}
               company={company || ""}
+              user={context?.user || ""}
             />
+            <InputReadiness key={`inputs:${company}`} company={company} />
+            {context?.roles?.includes("System Manager") && <>
             <RolloutReadiness company={company} />
             <Card>
               <CardHeader>
@@ -997,6 +999,7 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
                 )}
               </CardContent>
             </Card>
+            </>}
           </>
         )}
       </main>

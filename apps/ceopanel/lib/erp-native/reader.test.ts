@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { ERPNextClient } from "../erpnext-client"
+import { ERPNextError } from "../erpnext-client"
 import {
   erpReader,
   reportFilters,
@@ -183,6 +184,29 @@ function fixture() {
 }
 
 describe("native ERP business reading", () => {
+  it("discovers custom business sources for an employee without DocType administration", async () => {
+    const f = fixture()
+    vi.spyOn(f.erp, "list").mockRejectedValue(new ERPNextError("DocType administration denied", 403))
+    vi.spyOn(f.erp, "request").mockImplementation(async (raw) => {
+      const url = new URL(raw, context.siteUrl)
+      expect(url.pathname).toBe("/api/method/frappe.desk.search.search_widget")
+      expect(url.searchParams.get("doctype")).toBe("DocType")
+      expect(url.searchParams.has("ignore_user_permissions")).toBe(false)
+      return { values: [{ name: "Custom Request", module: "Operations", custom: 1, istable: 0, issingle: 0 }] }
+    })
+    vi.spyOn(f.erp, "canRead").mockResolvedValue(true)
+    const reader = erpReader(f.erp, { ...context, roles: ["Desk User", "Employee"] })
+    expect((await reader.sources("Custom", "doctype")).results).toMatchObject([{ name: "Custom Request", custom: true, canRead: true }])
+    vi.spyOn(f.erp, "canRead").mockResolvedValue(false)
+    expect((await reader.sources("Custom", "doctype")).results).toMatchObject([{ canRead: false }])
+  })
+  it("does not hide identity/network failures behind metadata discovery fallback", async () => {
+    const f = fixture()
+    vi.spyOn(f.erp, "list").mockRejectedValue(new ERPNextError("Expired", 401))
+    const request = vi.spyOn(f.erp, "request")
+    await expect(f.reader.sources("Custom", "doctype")).rejects.toMatchObject({ status: 401 })
+    expect(request).not.toHaveBeenCalled()
+  })
   it("does not expose child schemas or saved columns through a restricted parent table", async () => {
     const f = fixture()
     f.meta.fields.find((field) => field.fieldname === "lines")!.permlevel = 1

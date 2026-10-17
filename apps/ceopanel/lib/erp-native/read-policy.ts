@@ -5,7 +5,7 @@ export function nativeReadEnabled() {
   return process.env.ERP_AI_READ_ENABLED === "true"
 }
 export function nativeReadRoles() {
-  return (process.env.ERP_AI_READ_ROLES || "System Manager")
+  return (process.env.ERP_AI_READ_ROLES || "Desk User,System Manager")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)

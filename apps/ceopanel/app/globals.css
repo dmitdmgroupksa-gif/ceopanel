@@ -40,6 +40,14 @@
   --muted-foreground: oklch(0.556 0 0);
   --border: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  --chart-1: #2563eb;
+  --chart-2: #0d9488;
+  --chart-3: #8b5cf6;
+  --chart-4: #f59e0b;
+  --chart-5: #e11d48;
+  --chart-6: #0891b2;
+  --chart-7: #65a30d;
+  --chart-8: #ea580c;
 }
 .dark {
   --background: oklch(0.145 0 0);
@@ -51,6 +59,14 @@
   --muted-foreground: oklch(0.708 0 0);
   --border: oklch(1 0 0 / 10%);
   --ring: oklch(0.556 0 0);
+  --chart-1: #60a5fa;
+  --chart-2: #2dd4bf;
+  --chart-3: #a78bfa;
+  --chart-4: #fbbf24;
+  --chart-5: #fb7185;
+  --chart-6: #22d3ee;
+  --chart-7: #a3e635;
+  --chart-8: #fb923c;
 }
 @layer base {
   * {

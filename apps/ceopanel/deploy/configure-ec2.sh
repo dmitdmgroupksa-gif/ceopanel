@@ -7,7 +7,7 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
   exit 1
 fi
 command -v python3 >/dev/null
-python3 - "$deploy_dir" "$1" "${2:-System Manager}" <<'PY'
+python3 - "$deploy_dir" "$1" "${2:-Desk User,System Manager}" <<'PY'
 import ipaddress
 import json
 import os

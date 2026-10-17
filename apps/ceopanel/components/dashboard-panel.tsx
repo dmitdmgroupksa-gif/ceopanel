@@ -7,6 +7,7 @@ import {
   AreaChart,
   Bar,
   BarChart,
+  Cell,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -50,6 +51,7 @@ function formatMetric(metric: MetricValue, currency: string, locale: string) {
     return `${metric.value.toLocaleString(locale, { maximumFractionDigits: 2 })}%`
   return metric.value.toLocaleString(locale)
 }
+const chartColor = (index: number) => `var(--chart-${(index % 8) + 1})`
 function recordHref(value: string | undefined, siteUrl: string | undefined) {
   if (!value || !siteUrl) return undefined
   try {
@@ -162,6 +164,9 @@ export function DashboardPanel({
           <CardTitle>{t(data.chart.title)}</CardTitle>
         </CardHeader>
         <CardContent>
+          {data.chart.series.length > 1 && <div aria-label={t("Chart series")} className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            {data.chart.series.map((series, index) => <span key={series.key} className="flex items-center gap-2"><span aria-hidden="true" className="size-2.5 rounded-full" style={{ backgroundColor: chartColor(index) }} />{t(series.label)}</span>)}
+          </div>}
           {ready && data.chart.points.length > 0 ? (
             <div className="h-64">
               <ResponsiveContainer
@@ -204,15 +209,17 @@ export function DashboardPanel({
                         borderRadius: 8,
                       }}
                     />
-                    {data.chart.series.map((series) => (
+                    {data.chart.series.map((series, index) => (
                       <Bar
                         key={series.key}
                         dataKey={series.key}
                         name={t(series.label)}
-                        fill="var(--foreground)"
+                        fill={chartColor(index)}
                         radius={[0, 3, 3, 0]}
                         isAnimationActive={false}
-                      />
+                      >
+                        {data.chart.series.length === 1 && data.chart.points.map((point, i) => <Cell key={`${point.label}:${i}`} fill={chartColor(i)} />)}
+                      </Bar>
                     ))}
                   </BarChart>
                 ) : (
@@ -231,14 +238,11 @@ export function DashboardPanel({
                       <Area
                         key={series.key}
                         dataKey={series.key}
-                        name={series.label}
-                        stroke={
-                          index
-                            ? "var(--muted-foreground)"
-                            : "var(--foreground)"
-                        }
-                        fill="var(--foreground)"
-                        fillOpacity={index ? 0.04 : 0.1}
+                        name={t(series.label)}
+                        stroke={chartColor(index)}
+                        strokeWidth={2}
+                        fill={chartColor(index)}
+                        fillOpacity={0.14}
                         isAnimationActive={false}
                       />
                     ))}

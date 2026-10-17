@@ -809,6 +809,38 @@ export function erpReader(erp: Reader, context: UserContext) {
       }),
     }
   }
+  async function doctypeCatalog(): Promise<Row[]> {
+    try {
+      return await erp.list<Row>("DocType", {
+        fields: ["name", "module", "custom", "istable", "issingle"],
+        filters: [["istable", "=", 0], ["issingle", "=", 0]],
+      })
+    } catch (error) {
+      if (!(error instanceof ERPNextError) || error.status !== 403) throw error
+    }
+    // Frappe v14 exposes DocType names/metadata to Desk through its native Link
+    // search, even without administrative read access to DocType definitions.
+    // Never use an API key or ask Frappe to ignore business-record permissions.
+    const rows: Row[] = [], names = new Set<string>()
+    for (;;) {
+      const body = await erp.request(rpcPath("frappe.desk.search.search_widget", {
+        doctype: "DocType", txt: "", as_dict: "1", start: String(rows.length), page_length: "200",
+        filters: JSON.stringify({ istable: 0, issingle: 0 }),
+        filter_fields: JSON.stringify(["module", "custom", "istable", "issingle"]),
+      }))
+      if (!Array.isArray(body.values)) throw new ERPNextError("ERP returned an invalid source catalog.", 502)
+      for (const row of body.values) {
+        if (!row || typeof row.name !== "string" || !row.name.trim() || typeof row.module !== "string" || names.has(row.name))
+          throw new ERPNextError("ERP returned invalid or duplicate source metadata.", 502)
+        names.add(row.name)
+        rows.push(Object.fromEntries(["name", "module", "custom", "istable", "issingle"].map((key) => [key, row[key]])))
+      }
+      if (rows.length > 10000) throw new ERPNextError("ERP source discovery exceeded the supported catalog limit.", 409)
+      // A translated DocType may return more than page_length in Frappe v14.
+      // Advance by the actual number received; never truncate that metadata.
+      if (body.values.length < 200) return rows
+    }
+  }
   async function sources(
     query: string,
     kind: "all" | "doctype" | "report" = "all",
@@ -827,13 +859,7 @@ export function erpReader(erp: Reader, context: UserContext) {
       throw new ERPNextError("Invalid source search.", 400)
     const found: Row[] = []
     if (kind !== "report") {
-      const rows = await erp.list<Row>("DocType", {
-        fields: ["name", "module", "custom", "istable", "issingle"],
-        filters: [
-          ["istable", "=", 0],
-          ["issingle", "=", 0],
-        ],
-      })
+      const rows = await doctypeCatalog()
       found.push(
         ...rows
           .filter((r) => safeBusinessType(r as Meta))

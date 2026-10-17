@@ -7,6 +7,7 @@ import type { DashboardContext } from "../dashboard-server"
 import type { DashboardData, DashboardId, MetricValue } from "../dashboards"
 import type { ERPDocument, Period } from "../model"
 import { operationalDashboardIds } from "./operations-dashboards"
+import { inventoryDashboardIds } from "./inventory-dashboard"
 import { erpDate } from "./date"
 
 export const nativeDashboardIds = [
@@ -24,7 +25,8 @@ export const nativeDashboardIds = [
 export function isNativeDashboard(id: string) {
   return (
     nativeDashboardIds.some((value) => value === id) ||
-    operationalDashboardIds.some((value) => value === id)
+    operationalDashboardIds.some((value) => value === id) ||
+    inventoryDashboardIds.some((value) => value === id)
   )
 }
 

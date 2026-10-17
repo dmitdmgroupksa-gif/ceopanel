@@ -89,6 +89,7 @@ export function Dashboard({
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [explicitDashboard, setExplicitDashboard] = useState(initialDashboard !== dashboards[0].id)
   const nav = useRef<HTMLDivElement>(null)
   const [scroll, setScroll] = useState({ left: false, right: false })
   const controller = useRef<AbortController | null>(null)
@@ -119,6 +120,7 @@ export function Dashboard({
     const followHash = () => {
       const selected = findDashboard(window.location.hash.slice(1))
       if (selected) {
+        setExplicitDashboard(true)
         setActive(selected.id)
         if (selected.id === "approvals") setDays(30)
       }
@@ -242,15 +244,16 @@ export function Dashboard({
 
   useEffect(() => {
     if (
-      visibleDashboards.length &&
+      !explicitDashboard && visibleDashboards.length &&
       !visibleDashboards.some((item) => item.id === active)
     )
       setActive(visibleDashboards[0].id)
-  }, [context?.dashboardIds, active])
+  }, [context?.dashboardIds, active, explicitDashboard])
 
   function navigate(id: string) {
     const selected = findDashboard(id)
     if (selected && visibleDashboards.some((d) => d.id === selected.id)) {
+      setExplicitDashboard(true)
       if (selected.id === "approvals" && active !== selected.id) setDays(30)
       setActive(selected.id)
       window.history.pushState(null, "", `#${selected.id}`)
@@ -370,12 +373,12 @@ export function Dashboard({
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">
                 {t(
-                  visibleDashboards.length
+                  visibleDashboards.length || explicitDashboard
                     ? definition.title
                     : "No dashboards assigned.",
                 )}
               </h1>
-              {!visibleDashboards.length && (
+              {!visibleDashboards.length && !explicitDashboard && (
                 <p className="mt-1.5 text-sm text-muted-foreground">
                   {t(
                     "Ask your administrator to configure your department views.",
@@ -388,10 +391,11 @@ export function Dashboard({
                 <select
                   aria-label={t("Choose dashboard")}
                   className="h-9 max-w-full appearance-none rounded-md border bg-background py-1 pl-3 pr-8 text-sm shadow-xs"
-                  value={active}
+                  value={permitted ? active : ""}
                   disabled={!visibleDashboards.length}
                   onChange={(event) => navigate(event.target.value)}
                 >
+                  {!permitted && <option value="" disabled>{t("Choose dashboard")}</option>}
                   {visibleDashboards.map((item) => (
                     <option key={item.id} value={item.id}>
                       {t(item.title)}
@@ -483,7 +487,12 @@ export function Dashboard({
                   : null}
             </span>
           </div>
-          {visibleDashboards.map((item) => (
+          {!permitted && explicitDashboard ? (
+            <section role="alert" className="rounded-lg border bg-muted/20 p-8">
+              <h2 className="font-medium">{t("No access")}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">{t("Your Frappe permissions do not allow this dashboard. Choose an available dashboard or ask your ERP administrator.")}</p>
+            </section>
+          ) : visibleDashboards.map((item) => (
             <TabsContent key={item.id} value={item.id}>
               <DashboardPanel
                 definition={item}

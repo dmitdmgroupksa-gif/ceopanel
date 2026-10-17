@@ -1,7 +1,8 @@
 # Operational dashboards
 
 Implemented and checked against the configured ERP API account on 2026-10-17.
-There are now **16 connected dashboards**: the original ten plus these six.
+There are now **17 connected dashboards**: the original ten, these six, and the
+Warehouse Stock view described below.
 Three fill existing slots; Facilities & Renewals, IT Service and Factory Operations
 are new dashboard tabs. The eight main navigation destinations are unchanged.
 
@@ -30,6 +31,44 @@ Every view has searchable, paginated records, CSV export and source ERP links.
 Exports include scope and calculation notes. Status distributions use bar charts;
 existing financial time series retain area charts. New controls and scope notes
 have Arabic translations.
+
+## Warehouse Stock
+
+Open `/#warehouse-stock` or choose **Warehouse Stock** in the existing dashboard
+navigation. This current-register view needs no AI model, database migration,
+Redis configuration or ERP bridge. It keeps the Company selector and hides
+historical period controls. The older Stock view still covers stock movements.
+
+The adapter reads permitted company warehouses, validates their effective Company
+link, then reads nonzero `Bin.actual_qty` balances in bounded warehouse groups.
+Disabled warehouses are included if they have stock. Native read and field
+permissions apply to both sources. It never queries Bin without a verified
+warehouse scope or uses the discovery API key for a signed-in user.
+
+Metrics are on-hand stock value in company currency, item/warehouse balance count,
+negative balance count and balances with a positive reserved quantity greater than
+on-hand quantity. Rows retain each item's stock UOM, reserved/projected ERP values,
+native Item links, search, pagination and scoped CSV export. Quantities are not
+summed across incompatible units. The chart counts balances per warehouse; it
+does not claim unit quantities or valuation by a shared unit.
+
+Zero on-hand rows are outside this view even when reservations/orders remain.
+Projected quantities are not available-to-promise guarantees. This is a live
+on-hand valuation rather than a historical valuation or a complete reservation
+register. Missing values, ignored Company/nonzero filters, duplicate identities
+or item/warehouse pairs, and incomplete reads reject the result. The 10,000-row
+cap applies to the combined balance set, not separately to each warehouse group.
+
+The adapter passed a GET-only live check using the updated local API identity.
+Unit coverage checks Company/field permissions, native relationship validation,
+units, credits/negative values, duplicate pairs, empty scopes and combined limits.
+Browser coverage checks current-window controls, company selection, item links,
+units, scoped filtered CSV and removal of old results on denied refreshes.
+
+Verification for this addition: production build and TypeScript passed; 324
+unit/protocol tests and 22 focused desktop/mobile dashboard/navigation tests
+passed. The 42 database integration cases were not rerun for this adapter-only
+change. A scan of 60 built client assets found no configured secret matches.
 
 ## Limits and missing data
 

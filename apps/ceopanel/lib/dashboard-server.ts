@@ -11,6 +11,11 @@ import { businessDate, type Company } from "./model"
 import { platformConfig } from "./platform/config"
 import { mappedDashboard } from "./platform/erp-adapters"
 import { permissionedReader } from "./erp-native/permissioned-reader"
+import { accessibleDashboards } from "./erp-native/dashboard-access"
+import {
+  inventoryDashboard,
+  inventoryDashboardIds,
+} from "./erp-native/inventory-dashboard"
 import {
   isNativeDashboard,
   nativeDashboard,
@@ -32,6 +37,7 @@ export type DashboardContext = {
 }
 export async function loadContext(
   selectedCompany?: string,
+  includeDashboardAccess = false,
 ): Promise<DashboardContext> {
   const erp = await client()
   const user = await erp.user()
@@ -43,10 +49,8 @@ export async function loadContext(
   // Assistant assignments must not change access to ordinary ERP dashboards.
   // Explicit dashboard role mappings still apply when supplied.
   const mapped = Object.keys(config.dashboards).length > 0
-  const roles = mapped ? await erp.roles() : undefined
-  const executive =
-    roles && config.agents.executive?.roles.some((role) => roles.includes(role))
-  return {
+  const roles = mapped || includeDashboardAccess ? await erp.roles() : undefined
+  const context: DashboardContext = {
     user,
     company: company.name,
     currency: company.default_currency || "SAR",
@@ -55,16 +59,22 @@ export async function loadContext(
     ...(roles
       ? {
           roles,
-          dashboardIds: executive
-            ? undefined
-            : Object.entries(config.dashboards)
+          ...(mapped ? { dashboardIds: Object.entries(config.dashboards)
                 .filter(([, mapping]) =>
                   mapping.roles.some((role) => roles.includes(role)),
                 )
-                .map(([id]) => id as DashboardId),
+                .map(([id]) => id as DashboardId) } : {}),
         }
       : {}),
   }
+  if (includeDashboardAccess) {
+    const reports = Object.fromEntries(Object.entries(config.dashboards).flatMap(([id, mapping]) => {
+      const report = config.reports?.find((r) => r.id === mapping.report && r.readValidated)
+      return mapping.mappingValidated && report ? [[id, report.erpName]] : []
+    }))
+    context.dashboardIds = await accessibleDashboards(erp, { ...context, roles: roles! }, timezone, reports)
+  }
+  return context
 }
 
 type Adapter = (
@@ -93,6 +103,10 @@ for (const id of operationalDashboardIds) {
       period,
     )
   }
+}
+for (const id of inventoryDashboardIds) {
+  dashboardAdapters[id] = async (context, period) =>
+    inventoryDashboard(await client(), id, context, period)
 }
 for (const [id, mapping] of Object.entries(platformConfig().dashboards)) {
   const definition = findDashboard(id)

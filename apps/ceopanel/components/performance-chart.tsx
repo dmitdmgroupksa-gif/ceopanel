@@ -34,11 +34,11 @@ export function PerformanceChart({ snapshot }: { snapshot: Snapshot }) {
         </div>
         <div className="flex gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-foreground" />
+            <span className="size-2 rounded-full bg-[var(--chart-1)]" />
             Sales
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-foreground/30" />
+            <span className="size-2 rounded-full bg-[var(--chart-2)]" />
             Purchases
           </span>
         </div>
@@ -67,12 +67,12 @@ export function PerformanceChart({ snapshot }: { snapshot: Snapshot }) {
                   <linearGradient id="sales-fill" x1="0" y1="0" x2="0" y2="1">
                     <stop
                       offset="0%"
-                      stopColor="var(--foreground)"
+                      stopColor="var(--chart-1)"
                       stopOpacity={0.2}
                     />
                     <stop
                       offset="100%"
-                      stopColor="var(--foreground)"
+                      stopColor="var(--chart-1)"
                       stopOpacity={0.015}
                     />
                   </linearGradient>
@@ -85,12 +85,12 @@ export function PerformanceChart({ snapshot }: { snapshot: Snapshot }) {
                   >
                     <stop
                       offset="0%"
-                      stopColor="var(--foreground)"
+                      stopColor="var(--chart-2)"
                       stopOpacity={0.08}
                     />
                     <stop
                       offset="100%"
-                      stopColor="var(--foreground)"
+                      stopColor="var(--chart-2)"
                       stopOpacity={0.01}
                     />
                   </linearGradient>
@@ -141,7 +141,7 @@ export function PerformanceChart({ snapshot }: { snapshot: Snapshot }) {
                 <Area
                   dataKey="purchases"
                   type="monotone"
-                  stroke="var(--muted-foreground)"
+                  stroke="var(--chart-2)"
                   strokeWidth={1.5}
                   fill="url(#purchase-fill)"
                   isAnimationActive={false}
@@ -149,7 +149,7 @@ export function PerformanceChart({ snapshot }: { snapshot: Snapshot }) {
                 <Area
                   dataKey="sales"
                   type="monotone"
-                  stroke="var(--foreground)"
+                  stroke="var(--chart-1)"
                   strokeWidth={2}
                   fill="url(#sales-fill)"
                   isAnimationActive={false}

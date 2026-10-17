@@ -6,6 +6,7 @@ async function stagingAdministrator(page: Page) {
     route.fulfill({
       json: {
         user: "admin@example.com",
+        roles: ["Desk User", "System Manager"],
         company: "Durar",
         currency: "SAR",
         companies: [{ name: "Durar" }],

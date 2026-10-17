@@ -186,6 +186,31 @@ export const dashboards = [
     columns: ["Item", "Warehouse", "Available quantity", "Value", "Status"],
   },
   {
+    id: "warehouse-stock",
+    title: "Warehouse Stock",
+    icon: "stock",
+    window: "current",
+    description:
+      "Current nonzero on-hand balances by item and company warehouse.",
+    metrics: [
+      "On-hand stock value",
+      "Item-warehouse balances",
+      "Negative stock balances",
+      "Reserved above on-hand",
+    ],
+    chart: "Balances by warehouse",
+    columns: [
+      "Item",
+      "Warehouse",
+      "Stock UOM",
+      "On hand",
+      "Reserved",
+      "Projected",
+      "Stock value",
+      "Status",
+    ],
+  },
+  {
     id: "accounts",
     title: "Accounts Dashboard",
     icon: "accounts",

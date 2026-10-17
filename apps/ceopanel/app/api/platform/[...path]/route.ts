@@ -59,6 +59,11 @@ export async function GET(request: Request, { params }: Context) {
         modules: platformConfig().modules.filter((m) => m.readValidated).length,
       })
     const company = queryCompany(request)
+    if (path === "mcp-settings") {
+      const context = await identity(company)
+      const { mcpConnectionSettings } = await import("@/lib/mcp/settings")
+      return workspaceResponse(mcpConnectionSettings(context))
+    }
     if (path === "readiness") {
       const context = await identity(company)
       if (!context.roles.includes("System Manager"))

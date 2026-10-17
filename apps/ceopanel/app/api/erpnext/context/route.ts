@@ -9,6 +9,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       await loadContext(
         new URL(request.url).searchParams.get("company") || undefined,
+        true,
       ),
       { headers },
     )
