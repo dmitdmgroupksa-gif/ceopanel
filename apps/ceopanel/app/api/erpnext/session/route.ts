@@ -173,15 +173,20 @@ export async function DELETE(request: Request) {
   let remoteSessionRevoked = !sid || sid === "Guest"
   try {
     if (sid && sid !== "Guest" && /^[A-Za-z0-9_-]+$/.test(sid)) {
-      // Frappe v14's native logout invalidates this SID only. Its GET endpoint
-      // is called server-to-server, behind our same-origin DELETE boundary.
-      const response = await fetch(`${siteUrl()}/api/method/logout`, {
-        headers: { Cookie: `sid=${sid}`, Accept: "application/json" },
-        cache: "no-store",
-        redirect: "error",
-        signal: AbortSignal.timeout(15000),
-      })
-      remoteSessionRevoked = response.ok || response.status === 401
+      if (sid.startsWith("frappe_oauth_")) {
+        const { revokeFrappeLogin } = await import("@/lib/frappe-oauth")
+        remoteSessionRevoked = await revokeFrappeLogin(sid, siteUrl())
+      } else {
+        // Frappe v14's native logout invalidates this SID only. Its GET endpoint
+        // is called server-to-server, behind our same-origin DELETE boundary.
+        const response = await fetch(`${siteUrl()}/api/method/logout`, {
+          headers: { Cookie: `sid=${sid}`, Accept: "application/json" },
+          cache: "no-store",
+          redirect: "error",
+          signal: AbortSignal.timeout(15000),
+        })
+        remoteSessionRevoked = response.ok || response.status === 401
+      }
     }
   } catch {
     /* Always allow the browser to discard its local credentials. */

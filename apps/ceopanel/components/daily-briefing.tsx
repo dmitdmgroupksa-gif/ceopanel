@@ -4,6 +4,7 @@ import Link from "next/link"
 import { LoaderCircle, RefreshCw, ArrowUpRight } from "lucide-react"
 import { sessionFetch } from "@/lib/session-fetch"
 import type { DailyBrief } from "@/lib/erp-native/brief"
+import { isAllCompanies } from "@/lib/company-scope"
 import { useSession } from "./session-provider"
 import { useLocale } from "./locale-provider"
 import { Button } from "./ui/button"
@@ -11,12 +12,47 @@ import { Card, CardHeader, CardTitle, CardContent } from "./ui/card"
 
 export function DailyBriefing() {
   const { context } = useSession()
+  if (context && isAllCompanies(context.company))
+    return (
+      <div className="space-y-5">
+        {context.companies.map((company, i) => (
+          <CompanyBrief
+            key={company.name}
+            company={company.name}
+            initiallyOpen={i === 0}
+          />
+        ))}
+      </div>
+    )
   return context ? (
     <Briefing
       key={`${context.user}:${context.company}`}
       company={context.company}
     />
   ) : null
+}
+function CompanyBrief({
+  company,
+  initiallyOpen,
+}: {
+  company: string
+  initiallyOpen: boolean
+}) {
+  const [open, setOpen] = useState(initiallyOpen)
+  return (
+    <details
+      className="rounded-lg border p-4"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary className="cursor-pointer font-medium">{company}</summary>
+      {open && (
+        <div className="mt-4">
+          <Briefing company={company} />
+        </div>
+      )}
+    </details>
+  )
 }
 function Briefing({ company }: { company: string }) {
   const { t, locale } = useLocale()
@@ -56,7 +92,7 @@ function Briefing({ company }: { company: string }) {
           <h2 className="text-lg font-semibold">{t("Daily briefing")}</h2>
           <p className="mt-2 text-sm text-muted-foreground">
             {t(
-              "Live balances, workflow requests, delays and renewals from your ERP.",
+              "Live balances, workflow requests, delays and renewals from your ERP."
             )}
           </p>
         </div>
@@ -85,7 +121,7 @@ function Briefing({ company }: { company: string }) {
           <p className="text-xs text-muted-foreground">
             {company} · {t("As of")}: {data.asOf}.{" "}
             {t(
-              "Account-scoped cards can include other companies. Each source states its scope and period.",
+              "Account-scoped cards can include other companies. Each source states its scope and period."
             )}
           </p>
           <div className="grid min-w-0 gap-4 xl:grid-cols-2">

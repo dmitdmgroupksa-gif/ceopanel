@@ -6,6 +6,7 @@ import { NativeReadTable, NativeValueInput } from "./native-read-controls"
 import { NativeRecordInspector } from "./native-record-inspector"
 import { useLocale } from "./locale-provider"
 import { explorerRead } from "@/lib/explorer-client"
+import { companyLabel, isAllCompanies } from "@/lib/company-scope"
 import type {
   NativeSchema,
   NativeRecords,
@@ -29,7 +30,7 @@ export function NativeRecordsView({
     ...schema.fields.filter((f) => !f.fieldtype.startsWith("Table")),
   ]
   const hasCompany = fields.some(
-    (f) => f.fieldname === "company" && f.options === "Company",
+    (f) => f.fieldname === "company" && f.options === "Company"
   )
   const [companyOnly, setCompanyOnly] = useState(hasCompany)
   const [selected, setSelected] = useState([
@@ -45,7 +46,7 @@ export function NativeRecordsView({
           "title",
           "customer_name",
           "employee_name",
-        ].includes(f.fieldname),
+        ].includes(f.fieldname)
       )
       .slice(0, 4)
       .map((f) => f.fieldname),
@@ -57,7 +58,10 @@ export function NativeRecordsView({
   const [busy, setBusy] = useState(false)
   const [record, setRecord] = useState("")
   const controller = useRef<AbortController | null>(null)
-  useEffect(() => () => controller.current?.abort(), [])
+  useEffect(() => {
+    void load()
+    return () => controller.current?.abort()
+  }, [schema.doctype, company])
   function changed() {
     controller.current?.abort()
     setBusy(false)
@@ -87,7 +91,7 @@ export function NativeRecordsView({
           (r) =>
             r.value === undefined ||
             r.value === "" ||
-            (Array.isArray(r.value) && !r.value.length),
+            (Array.isArray(r.value) && !r.value.length)
         )
       )
         throw new Error("Enter a value for every record filter.")
@@ -95,7 +99,7 @@ export function NativeRecordsView({
         normalized.some(
           (r) =>
             r.operator === "between" &&
-            (!Array.isArray(r.value) || r.value.length !== 2),
+            (!Array.isArray(r.value) || r.value.length !== 2)
         )
       )
         throw new Error("Between filters require two values.")
@@ -104,7 +108,8 @@ export function NativeRecordsView({
         r.operator,
         r.value,
       ])
-      if (companyOnly && hasCompany) filters.push(["company", "=", company])
+      if (companyOnly && hasCompany && !isAllCompanies(company))
+        filters.push(["company", "=", company])
       const data = await explorerRead<NativeRecords>(
         company,
         {
@@ -115,7 +120,7 @@ export function NativeRecordsView({
           filters,
           offset,
         },
-        abort.signal,
+        abort.signal
       )
       if (!abort.signal.aborted) setResult(data)
     } catch (e) {
@@ -127,7 +132,7 @@ export function NativeRecordsView({
   function updateRule(id: string, update: Partial<Rule>) {
     changed()
     setRules((current) =>
-      current.map((r) => (r.id === id ? { ...r, ...update } : r)),
+      current.map((r) => (r.id === id ? { ...r, ...update } : r))
     )
   }
   return (
@@ -155,7 +160,7 @@ export function NativeRecordsView({
             }}
           />
         </label>
-        {hasCompany && (
+        {hasCompany && !isAllCompanies(company) && (
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -166,7 +171,7 @@ export function NativeRecordsView({
                 setCompanyOnly(e.target.checked)
               }}
             />
-            {t("Filter to selected company")}: {company}
+            {t("Filter to selected company")}: {t(companyLabel(company))}
           </label>
         )}
         <details className="rounded-md border p-3">
@@ -192,7 +197,7 @@ export function NativeRecordsView({
                     setSelected((current) =>
                       e.target.checked
                         ? [...current, f.fieldname]
-                        : current.filter((n) => n !== f.fieldname),
+                        : current.filter((n) => n !== f.fieldname)
                     )
                   }}
                 />
@@ -201,114 +206,126 @@ export function NativeRecordsView({
             ))}
           </div>
         </details>
-        {rules.map((rule) => {
-          const field = fields.find((f) => f.fieldname === rule.field)!
-          const valueField = {
-            ...field,
-            required: true,
-            fieldtype: ["in", "not in", "between"].includes(rule.operator)
-              ? "MultiSelectList"
-              : rule.operator === "is"
-                ? "Select"
-                : field.fieldtype,
-            ...(rule.operator === "is" ? { options: "set\nnot set" } : {}),
-          }
-          return (
-            <div
-              key={rule.id}
-              className="grid items-end gap-3 rounded-md border p-3 sm:grid-cols-2 xl:grid-cols-4"
-            >
-              <label className="space-y-2 text-sm">
-                <span>{t("Field")}</span>
-                <select
-                  className="h-9 w-full rounded-md border bg-background px-2"
-                  disabled={busy}
-                  value={rule.field}
-                  onChange={(e) =>
-                    updateRule(rule.id, {
-                      field: e.target.value,
-                      value: undefined,
-                    })
-                  }
+        <details className="rounded-md border p-3">
+          <summary className="cursor-pointer text-sm">
+            {t("Advanced filters")}
+            {rules.length ? ` (${rules.length})` : ""}
+          </summary>
+          <div className="mt-3 space-y-3">
+            {rules.map((rule) => {
+              const field = fields.find((f) => f.fieldname === rule.field)!
+              const valueField = {
+                ...field,
+                required: true,
+                fieldtype: ["in", "not in", "between"].includes(rule.operator)
+                  ? "MultiSelectList"
+                  : rule.operator === "is"
+                    ? "Select"
+                    : field.fieldtype,
+                ...(rule.operator === "is" ? { options: "set\nnot set" } : {}),
+              }
+              return (
+                <div
+                  key={rule.id}
+                  className="grid items-end gap-3 rounded-md border p-3 sm:grid-cols-2 xl:grid-cols-4"
                 >
-                  {fields.map((f) => (
-                    <option key={f.fieldname} value={f.fieldname}>
-                      {f.label || f.fieldname}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-2 text-sm">
-                <span>{t("Condition")}</span>
-                <select
-                  className="h-9 w-full rounded-md border bg-background px-2"
-                  disabled={busy}
-                  value={rule.operator}
-                  onChange={(e) =>
-                    updateRule(rule.id, {
-                      operator: e.target.value,
-                      value: undefined,
-                    })
-                  }
-                >
-                  {[
-                    "=",
-                    "!=",
-                    ">",
-                    ">=",
-                    "<",
-                    "<=",
-                    "like",
-                    "not like",
-                    "in",
-                    "not in",
-                    "between",
-                    "is",
-                  ].map((op) => (
-                    <option key={op}>{op}</option>
-                  ))}
-                </select>
-              </label>
-              <NativeValueInput
-                field={valueField}
-                value={rule.value}
-                disabled={busy}
-                onChange={(value) => updateRule(rule.id, { value })}
-              />
+                  <label className="space-y-2 text-sm">
+                    <span>{t("Field")}</span>
+                    <select
+                      className="h-9 w-full rounded-md border bg-background px-2"
+                      disabled={busy}
+                      value={rule.field}
+                      onChange={(e) =>
+                        updateRule(rule.id, {
+                          field: e.target.value,
+                          value: undefined,
+                        })
+                      }
+                    >
+                      {fields.map((f) => (
+                        <option key={f.fieldname} value={f.fieldname}>
+                          {f.label || f.fieldname}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span>{t("Condition")}</span>
+                    <select
+                      className="h-9 w-full rounded-md border bg-background px-2"
+                      disabled={busy}
+                      value={rule.operator}
+                      onChange={(e) =>
+                        updateRule(rule.id, {
+                          operator: e.target.value,
+                          value: undefined,
+                        })
+                      }
+                    >
+                      {[
+                        "=",
+                        "!=",
+                        ">",
+                        ">=",
+                        "<",
+                        "<=",
+                        "like",
+                        "not like",
+                        "in",
+                        "not in",
+                        "between",
+                        "is",
+                      ].map((op) => (
+                        <option key={op}>{op}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <NativeValueInput
+                    field={valueField}
+                    value={rule.value}
+                    disabled={busy}
+                    onChange={(value) => updateRule(rule.id, { value })}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => {
+                      changed()
+                      setRules((current) =>
+                        current.filter((r) => r.id !== rule.id)
+                      )
+                    }}
+                  >
+                    {t("Remove filter")}
+                  </Button>
+                </div>
+              )
+            })}
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
-                disabled={busy}
+                disabled={busy || rules.length >= 19}
                 onClick={() => {
                   changed()
-                  setRules((current) => current.filter((r) => r.id !== rule.id))
+                  setRules((current) => [
+                    ...current,
+                    {
+                      id: crypto.randomUUID(),
+                      field: "name",
+                      operator: "=",
+                      value: undefined,
+                    },
+                  ])
                 }}
               >
-                {t("Remove filter")}
+                {t("Add record filter")}
               </Button>
             </div>
-          )
-        })}
+          </div>
+        </details>
         <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy || rules.length >= 19}
-            onClick={() => {
-              changed()
-              setRules((current) => [
-                ...current,
-                {
-                  id: crypto.randomUUID(),
-                  field: "name",
-                  operator: "=",
-                  value: undefined,
-                },
-              ])
-            }}
-          >
-            {t("Add record filter")}
-          </Button>
           <Button type="submit" disabled={busy}>
             {t(busy ? "Loading…" : "Load records")}
           </Button>

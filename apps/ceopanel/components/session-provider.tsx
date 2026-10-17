@@ -76,18 +76,24 @@ function PreviewSession({
 }
 
 function ProtectedSession({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
   const { t } = useLocale()
   const router = useRouter()
   const [context, setContext] = useState<DashboardContext | null>(null)
   const [error, setError] = useState("")
   const [checking, setChecking] = useState(true)
+  const [checkedPath, setCheckedPath] = useState<string | null>(null)
   const controller = useRef<AbortController | null>(null)
   const company = useRef<string | undefined>(undefined)
   company.current = context?.company
-  const updateContext = useCallback<Session["setContext"]>((value) => {
-    controller.current?.abort()
-    setContext(value)
-  }, [])
+  const updateContext = useCallback<Session["setContext"]>(
+    (value) => {
+      controller.current?.abort()
+      setCheckedPath(pathname)
+      setContext(value)
+    },
+    [pathname]
+  )
   const expire = useCallback(() => {
     controller.current?.abort()
     setContext(null)
@@ -95,8 +101,8 @@ function ProtectedSession({ children }: { children: React.ReactNode }) {
     router.replace(
       loginPath(
         `${window.location.pathname}${window.location.search}${window.location.hash}`,
-        true,
-      ),
+        true
+      )
     )
   }, [router])
   const check = useCallback(async () => {
@@ -106,10 +112,11 @@ function ProtectedSession({ children }: { children: React.ReactNode }) {
     setError("")
     setChecking(true)
     try {
-      const params = company.current
-        ? `?company=${encodeURIComponent(company.current)}`
-        : ""
-      const response = await fetch(`/api/erpnext/context${params}`, {
+      const params = new URLSearchParams({
+        navigation: pathname === "/" ? "1" : "0",
+        ...(company.current ? { company: company.current } : {}),
+      })
+      const response = await fetch(`/api/erpnext/context?${params}`, {
         cache: "no-store",
         signal: abort.signal,
       })
@@ -121,22 +128,25 @@ function ProtectedSession({ children }: { children: React.ReactNode }) {
       const body = await response.json()
       if (!response.ok)
         throw new Error(
-          body.error || "Your company session could not be verified.",
+          body.error || "Your company session could not be verified."
         )
-      if (!abort.signal.aborted) setContext(body)
+      if (!abort.signal.aborted) {
+        setContext(body)
+        setCheckedPath(pathname)
+      }
     } catch (cause) {
       if (!abort.signal.aborted) {
         setContext(null)
         setError(
           cause instanceof Error
             ? cause.message
-            : "Your company session could not be verified.",
+            : "Your company session could not be verified."
         )
       }
     } finally {
       if (!abort.signal.aborted) setChecking(false)
     }
-  }, [expire])
+  }, [expire, pathname])
   useEffect(() => {
     void check()
     const focus = () => {
@@ -161,19 +171,24 @@ function ProtectedSession({ children }: { children: React.ReactNode }) {
     router.replace(
       result.remoteSessionRevoked === false
         ? "/login?logout=incomplete"
-        : "/login",
+        : "/login"
     )
     router.refresh()
   }, [router])
 
   // A cookie only passes the optimistic proxy. Never mount company views until
   // the server has checked the native session and permitted company list.
-  if (!context)
+  const awaitingNavigation =
+    pathname === "/" &&
+    !!context &&
+    context.dashboardIds === undefined &&
+    checkedPath !== "/"
+  if (!context || awaitingNavigation)
     return (
       <main className="grid min-h-svh place-items-center px-6">
         <div className="max-w-md space-y-4 text-center">
           <ShieldCheck className="mx-auto size-10 text-primary" />
-          {checking ? (
+          {checking || awaitingNavigation ? (
             <p
               role="status"
               className="flex items-center justify-center gap-2 text-sm text-muted-foreground"

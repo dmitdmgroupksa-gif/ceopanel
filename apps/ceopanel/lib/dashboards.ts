@@ -317,6 +317,7 @@ export type MetricValue = {
   note?: string
 }
 export type DashboardData = {
+  companyResults?: { company: string; data?: DashboardData; error?: string }[]
   scope?: "company" | "erp-account"
   dashboardId: DashboardId
   status: "awaiting-data" | "ready"
@@ -347,13 +348,13 @@ export function emptyDashboard(
   definition: DashboardDefinition,
   today: string,
   days = 90,
-  company: string | null = null,
+  company: string | null = null
 ): DashboardData {
   const period = makePeriod(definition.window === "current" ? 1 : days, today)
   if (definition.window === "upcoming") {
     period.from = today
     period.to = new Date(
-      Date.parse(`${today}T00:00:00Z`) + (days - 1) * 86400000,
+      Date.parse(`${today}T00:00:00Z`) + (days - 1) * 86400000
     )
       .toISOString()
       .slice(0, 10)

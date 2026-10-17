@@ -19,6 +19,7 @@ import {
 } from "./dashboard-server"
 import { GET } from "../app/api/dashboards/[dashboardId]/route"
 const defaults = { ...dashboardAdapters }
+import { ALL_COMPANIES } from "./company-scope"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -28,6 +29,37 @@ afterEach(() => {
   Object.assign(dashboardAdapters, defaults)
 })
 describe("dashboard preparation", () => {
+  it("keeps All Companies results separate with their own currencies and native contexts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("get_logged_user")
+          ? Response.json({ message: "reader" })
+          : Response.json({
+              data: [
+                { name: "A", default_currency: "SAR" },
+                { name: "B", default_currency: "USD" },
+              ],
+            })
+      )
+    )
+    const adapter = vi.fn(async (context) => ({
+      ...emptyDashboard(dashboards[0], "2026-10-17", 30, context.company),
+      status: "ready" as const,
+      currency: context.currency,
+      metrics: [{ label: "Revenue", value: 10, format: "currency" as const }],
+    }))
+    dashboardAdapters["sales-comparison"] = adapter
+    const data = await loadDashboard("sales-comparison", 30, ALL_COMPANIES)
+    expect(
+      data.companyResults?.map((p) => [p.company, p.data?.currency])
+    ).toEqual([
+      ["A", "SAR"],
+      ["B", "USD"],
+    ])
+    expect(data.metrics).toEqual([])
+    expect(adapter).toHaveBeenCalledTimes(2)
+  })
   it("does not let optional assistant assignments hide native dashboards", async () => {
     config.agents.sales = { roles: ["Sales User"] }
     const fetcher = vi.fn(async (url: string) => {
@@ -65,12 +97,12 @@ describe("dashboard preparation", () => {
             roles: [{ role: "Employee" }],
           },
         })
-      }),
+      })
     )
     const adapter = vi.fn()
     dashboardAdapters["sales-comparison"] = adapter
     await expect(
-      loadDashboard("sales-comparison", 30, "Company A"),
+      loadDashboard("sales-comparison", 30, "Company A")
     ).rejects.toMatchObject({ status: 403 })
     expect(adapter).not.toHaveBeenCalled()
   })
@@ -78,7 +110,7 @@ describe("dashboard preparation", () => {
     const fetcher = vi.fn()
     vi.stubGlobal("fetch", fetcher)
     for (const dashboard of dashboards.filter(
-      (item) => !dashboardAdapters[item.id],
+      (item) => !dashboardAdapters[item.id]
     )) {
       const data = await loadDashboard(dashboard.id, 30)
       expect(data.status).toBe("awaiting-data")
@@ -95,15 +127,15 @@ describe("dashboard preparation", () => {
         await GET(new Request("https://panel.example/api/dashboards/missing"), {
           params: Promise.resolve({ dashboardId: "missing" }),
         })
-      ).status,
+      ).status
     ).toBe(404)
     expect(
       (
         await GET(
           new Request("https://panel.example/api/dashboards/crm?days=0"),
-          { params: Promise.resolve({ dashboardId: "crm" }) },
+          { params: Promise.resolve({ dashboardId: "crm" }) }
         )
-      ).status,
+      ).status
     ).toBe(400)
   })
   it("passes a verified company to future adapters and rejects cross-company results", async () => {
@@ -114,8 +146,8 @@ describe("dashboard preparation", () => {
           ? Response.json({ message: "ceo@example.com" })
           : Response.json({
               data: [{ name: "Company A", default_currency: "SAR" }],
-            }),
-      ),
+            })
+      )
     )
     const adapter = vi.fn(async () => ({
       ...emptyDashboard(dashboards[0], "2026-10-14"),
@@ -124,14 +156,14 @@ describe("dashboard preparation", () => {
     }))
     dashboardAdapters["sales-comparison"] = adapter
     await expect(
-      loadDashboard("sales-comparison", 90, "Company A"),
+      loadDashboard("sales-comparison", 90, "Company A")
     ).rejects.toThrow("different company")
     expect(adapter).toHaveBeenCalledWith(
       expect.objectContaining({
         company: "Company A",
         user: "ceo@example.com",
       }),
-      expect.objectContaining({ days: 90 }),
+      expect.objectContaining({ days: 90 })
     )
   })
 })

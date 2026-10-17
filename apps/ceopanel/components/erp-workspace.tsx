@@ -1,4 +1,5 @@
 "use client"
+import { ALL_COMPANIES } from "@/lib/company-scope"
 import { sessionFetch as fetch } from "@/lib/session-fetch"
 import dynamic from "next/dynamic"
 import { useLocale } from "./locale-provider"
@@ -6,7 +7,6 @@ import { PlatformLinks, IconHint } from "./platform-links"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   Building2,
-  Download,
   FileText,
   LoaderCircle,
   Plus,
@@ -25,38 +25,26 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TableFooter,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useSession } from "./session-provider"
 import {
   pendingSchema,
   type ModuleSchema,
-  type RecordValues,
-  type ReportData,
-  type ReportDefinition,
   type WorkspaceModule,
   type WorkspaceRecord,
 } from "@/lib/workspace"
-import { downloadCSV } from "./records-table"
 import { WorkspaceEditor } from "./workspace-editor"
-import { WorkspaceFields } from "./workspace-fields"
 import { ERP_READ_ONLY } from "@/lib/erp-access"
 
 const ERPExplorer = dynamic(() =>
-  import("./erp-explorer").then((m) => m.ERPExplorer),
+  import("./erp-explorer").then((m) => m.ERPExplorer)
 )
 const DailyBriefing = dynamic(() =>
-  import("./daily-briefing").then((m) => m.DailyBriefing),
+  import("./daily-briefing").then((m) => m.DailyBriefing)
 )
 
-export function ERPWorkspace({
-  modules,
-  reports,
-}: {
-  modules: WorkspaceModule[]
-  reports: ReportDefinition[]
-}) {
+export function ERPWorkspace({ modules }: { modules: WorkspaceModule[] }) {
   const { t, locale } = useLocale()
   const { context, setContext, preview } = useSession()
   const [mode, setMode] = useState("records")
@@ -70,9 +58,6 @@ export function ERPWorkspace({
   const [error, setError] = useState<string | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [record, setRecord] = useState<WorkspaceRecord | null>(null)
-  const [reportId, setReportId] = useState(reports[0]?.id || "")
-  const [filters, setFilters] = useState<RecordValues>({})
-  const [reportData, setReportData] = useState<ReportData | null>(null)
   const requestId = useRef(0)
   const operationId = useRef(0)
   const abort = useRef<AbortController | null>(null)
@@ -80,7 +65,6 @@ export function ERPWorkspace({
   const shownModules =
     mode === "custom" ? custom : modules.filter((module) => !module.custom)
   const module = modules.find((item) => item.id === selected) ?? modules[0]
-  const activeReport = reports.find((report) => report.id === reportId)
   const companyQuery = context?.company
     ? `company=${encodeURIComponent(context.company)}`
     : ""
@@ -92,7 +76,7 @@ export function ERPWorkspace({
   useEffect(() => {
     const follow = () => {
       const id = window.location.hash.slice(1)
-      if (id === "explorer" || id === "briefing") {
+      if (["explorer", "briefing", "custom", "reports"].includes(id)) {
         ++operationId.current
         abort.current?.abort()
         ++requestId.current
@@ -118,11 +102,7 @@ export function ERPWorkspace({
   }, [modules])
 
   const load = useCallback(async () => {
-    if (
-      !["records", "custom"].includes(mode) ||
-      (mode === "custom" && custom.length === 0)
-    )
-      return
+    if (mode !== "records") return
     if (preview) {
       setSchema(pendingSchema(module))
       setRecords([])
@@ -151,7 +131,7 @@ export function ERPWorkspace({
       if (!meta.ready || !context) return
       if (!meta.permissions.read)
         throw new Error(
-          "Your ERPNext account does not have permission to read these records.",
+          "Your ERPNext account does not have permission to read these records."
         )
       const params = new URLSearchParams({
         offset: String(offset),
@@ -181,7 +161,7 @@ export function ERPWorkspace({
         setError(
           cause instanceof Error
             ? cause.message
-            : "Records could not be loaded.",
+            : "Records could not be loaded."
         )
       }
     } finally {
@@ -228,7 +208,7 @@ export function ERPWorkspace({
     setRecord(null)
     setError(null)
     setRecords([])
-    if (next === "explorer" || next === "briefing") {
+    if (["explorer", "briefing", "custom", "reports"].includes(next)) {
       abort.current?.abort()
       ++requestId.current
       window.history.pushState(null, "", `#${next}`)
@@ -244,21 +224,19 @@ export function ERPWorkspace({
     ++requestId.current
     setBusy(true)
     setRecords([])
-    setReportData(null)
     setEditorOpen(false)
     setSchema(pendingSchema(module))
     setError(null)
     try {
       const response = await fetch(
-        `/api/erpnext/context${company ? `?company=${encodeURIComponent(company)}` : ""}`,
-        { cache: "no-store" },
+        `/api/erpnext/context?${new URLSearchParams({ navigation: "0", ...(company ? { company } : {}) })}`,
+        { cache: "no-store" }
       )
       const body = await response.json()
       if (!response.ok) throw new Error(body.error || "Connection failed.")
       if (token !== operationId.current) return
       setContext(body)
       setRecords([])
-      setReportData(null)
       setEditorOpen(false)
       setRecord(null)
       setOffset(0)
@@ -276,7 +254,7 @@ export function ERPWorkspace({
     try {
       const response = await fetch(
         `${base}/records/${encodeURIComponent(name)}?${companyQuery}`,
-        { cache: "no-store" },
+        { cache: "no-store" }
       )
       const body = await response.json()
       if (!response.ok)
@@ -289,38 +267,7 @@ export function ERPWorkspace({
         setError(
           cause instanceof Error
             ? cause.message
-            : "The record could not be opened.",
-        )
-    } finally {
-      if (token === operationId.current) setBusy(false)
-    }
-  }
-  async function runReport(event: React.FormEvent) {
-    event.preventDefault()
-    if (!activeReport) return
-    const token = ++operationId.current
-    setBusy(true)
-    setError(null)
-    setReportData(null)
-    try {
-      const response = await fetch(
-        `/api/workspace/reports/${encodeURIComponent(activeReport.id)}?${companyQuery}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filters }),
-        },
-      )
-      const body = await response.json()
-      if (!response.ok)
-        throw new Error(body.error || "The report could not be loaded.")
-      if (token === operationId.current) setReportData(body)
-    } catch (cause) {
-      if (token === operationId.current)
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "The report could not be loaded.",
+            : "The record could not be opened."
         )
     } finally {
       if (token === operationId.current) setBusy(false)
@@ -352,6 +299,7 @@ export function ERPWorkspace({
                   className="dashboard-icon min-w-12"
                 >
                   <Building2 aria-hidden="true" />
+                  <span>{t("Company records")}</span>
                 </TabsTrigger>
               </IconHint>
               <IconHint label={t("Custom DocTypes")}>
@@ -361,6 +309,7 @@ export function ERPWorkspace({
                   className="dashboard-icon min-w-12"
                 >
                   <Settings2 aria-hidden="true" />
+                  <span>{t("Custom DocTypes")}</span>
                 </TabsTrigger>
               </IconHint>
               <IconHint label={t("Custom reports")}>
@@ -370,6 +319,7 @@ export function ERPWorkspace({
                   className="dashboard-icon min-w-12"
                 >
                   <FileText aria-hidden="true" />
+                  <span>{t("Custom reports")}</span>
                 </TabsTrigger>
               </IconHint>
               <IconHint label={t("Explorer")}>
@@ -379,6 +329,7 @@ export function ERPWorkspace({
                   className="dashboard-icon min-w-12"
                 >
                   <Search aria-hidden="true" />
+                  <span>{t("Explorer")}</span>
                 </TabsTrigger>
               </IconHint>
               <IconHint label={t("Daily briefing")}>
@@ -388,11 +339,12 @@ export function ERPWorkspace({
                   className="dashboard-icon min-w-12"
                 >
                   <Sun aria-hidden="true" />
+                  <span>{t("Daily briefing")}</span>
                 </TabsTrigger>
               </IconHint>
             </TabsList>
           </div>
-          {(mode === "explorer" || mode === "briefing") &&
+          {["explorer", "briefing", "custom", "reports"].includes(mode) &&
             context &&
             context.companies.length > 1 && (
               <select
@@ -402,6 +354,7 @@ export function ERPWorkspace({
                 disabled={busy}
                 onChange={(event) => void connect(event.target.value)}
               >
+                <option value={ALL_COMPANIES}>{t("All Companies")}</option>
                 {context.companies.map((company) => (
                   <option key={company.name}>{company.name}</option>
                 ))}
@@ -413,16 +366,18 @@ export function ERPWorkspace({
           <TabsContent value="briefing">
             {mode === "briefing" && !busy && <DailyBriefing />}
           </TabsContent>
-          {(mode === "explorer" || mode === "briefing") && !context && (
-            <p className="text-sm text-muted-foreground">
-              {t("Sign in to read live ERP data.")}
-            </p>
-          )}
-          {(mode === "explorer" || mode === "briefing") && busy && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {t("Checking source access…")}
-            </p>
-          )}
+          {["explorer", "briefing", "custom", "reports"].includes(mode) &&
+            !context && (
+              <p className="text-sm text-muted-foreground">
+                {t("Sign in to read live ERP data.")}
+              </p>
+            )}
+          {["explorer", "briefing", "custom", "reports"].includes(mode) &&
+            busy && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {t("Checking source access…")}
+              </p>
+            )}
           {error && (
             <p
               role="alert"
@@ -431,7 +386,7 @@ export function ERPWorkspace({
               {t(error)}
             </p>
           )}
-          {(mode === "records" || (mode === "custom" && custom.length > 0)) && (
+          {mode === "records" && (
             <div className="space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
@@ -454,6 +409,9 @@ export function ERPWorkspace({
                       value={context.company}
                       onChange={(event) => void connect(event.target.value)}
                     >
+                      <option value={ALL_COMPANIES}>
+                        {t("All Companies")}
+                      </option>
                       {context.companies.map((company) => (
                         <option key={company.name} value={company.name}>
                           {company.name}
@@ -552,14 +510,14 @@ export function ERPWorkspace({
                                   {String(
                                     column.key === "name"
                                       ? row.name
-                                      : (row.values[column.key] ?? row.name),
+                                      : (row.values[column.key] ?? row.name)
                                   )}
                                 </button>
                               ) : (
                                 String(
                                   column.key === "modified"
                                     ? row.modified
-                                    : (row.values[column.key] ?? "—"),
+                                    : (row.values[column.key] ?? "—")
                                 )
                               )}
                             </TableCell>
@@ -584,7 +542,7 @@ export function ERPWorkspace({
                         {t(
                           ready
                             ? "No records in this view."
-                            : "This record type is not connected yet.",
+                            : "This record type is not connected yet."
                         )}
                       </p>
                     </div>
@@ -617,147 +575,10 @@ export function ERPWorkspace({
             </div>
           )}
           <TabsContent value="custom">
-            {custom.length === 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t("Custom DocTypes")}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="py-10 text-center text-sm text-muted-foreground">
-                    {t("No custom record types configured.")}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+            {mode === "custom" && <ERPExplorer pickerKind="doctype" />}
           </TabsContent>
-          <TabsContent value="reports" className="space-y-5">
-            {activeReport ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t("Custom reports")}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <form className="space-y-5" onSubmit={runReport}>
-                    <select
-                      aria-label="Choose custom report"
-                      className="h-9 max-w-full rounded-md border bg-background px-3 text-sm"
-                      value={reportId}
-                      onChange={(event) => {
-                        ++operationId.current
-                        setBusy(false)
-                        setReportId(event.target.value)
-                        setFilters({})
-                        setReportData(null)
-                      }}
-                    >
-                      {reports.map((report) => (
-                        <option key={report.id} value={report.id}>
-                          {report.title}
-                        </option>
-                      ))}
-                    </select>
-                    <WorkspaceFields
-                      fields={activeReport.filters}
-                      values={filters}
-                      onChange={setFilters}
-                      disabled={busy || !context}
-                      prefix="report"
-                    />
-                    <Button type="submit" disabled={busy || !context}>
-                      {busy && <LoaderCircle className="animate-spin" />}Run
-                      report
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t("Custom reports")}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="py-10 text-center text-sm text-muted-foreground">
-                    {t("No custom reports configured.")}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-            {reportData && (
-              <Card className="gap-0 overflow-hidden">
-                <CardHeader className="flex flex-row items-center justify-between pb-4">
-                  <CardTitle>{activeReport?.title}</CardTitle>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={reportData.rows.length === 0}
-                    onClick={() =>
-                      downloadCSV(`${reportId}.csv`, [
-                        reportData.columns.map((column) => column.label),
-                        ...reportData.rows.map((row) =>
-                          reportData.columns.map(
-                            (column) => row[column.key] ?? "",
-                          ),
-                        ),
-                        ...(reportData.totalRow
-                          ? [
-                              reportData.columns.map(
-                                (column) =>
-                                  reportData.totalRow![column.key] ?? "",
-                              ),
-                            ]
-                          : []),
-                      ])
-                    }
-                  >
-                    <Download />
-                    {t("Export")}
-                  </Button>
-                </CardHeader>
-                <CardContent className="px-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        {reportData.columns.map((column) => (
-                          <TableHead key={column.key} className="first:pl-6">
-                            {t(column.label)}
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {reportData.rows.map((row, index) => (
-                        <TableRow key={index}>
-                          {reportData.columns.map((column) => (
-                            <TableCell key={column.key} className="first:pl-6">
-                              {row[column.key] ?? "—"}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                    {reportData.totalRow && (
-                      <TableFooter>
-                        <TableRow>
-                          {reportData.columns.map((column) => (
-                            <TableCell
-                              key={column.key}
-                              className="first:pl-6 font-medium"
-                            >
-                              {reportData.totalRow![column.key] ?? ""}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      </TableFooter>
-                    )}
-                  </Table>
-                  {reportData.rows.length === 0 && (
-                    <p className="p-8 text-center text-sm text-muted-foreground">
-                      No report results for these filters.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+          <TabsContent value="reports">
+            {mode === "reports" && <ERPExplorer pickerKind="report" />}
           </TabsContent>
         </Tabs>
       </main>

@@ -12,6 +12,7 @@ import { platformConfig } from "./platform/config"
 import { mappedDashboard } from "./platform/erp-adapters"
 import { permissionedReader } from "./erp-native/permissioned-reader"
 import { accessibleDashboards } from "./erp-native/dashboard-access"
+import { ALL_COMPANIES, isAllCompanies } from "./company-scope"
 import {
   inventoryDashboard,
   inventoryDashboardIds,
@@ -38,6 +39,7 @@ export type DashboardContext = {
 export async function loadContext(
   selectedCompany?: string,
   includeDashboardAccess = false,
+  includeRoles = false
 ): Promise<DashboardContext> {
   const erp = await client()
   const user = await erp.user()
@@ -49,37 +51,61 @@ export async function loadContext(
   // Assistant assignments must not change access to ordinary ERP dashboards.
   // Explicit dashboard role mappings still apply when supplied.
   const mapped = Object.keys(config.dashboards).length > 0
-  const roles = mapped || includeDashboardAccess ? await erp.roles() : undefined
+  const roles =
+    mapped || includeDashboardAccess || includeRoles
+      ? await erp.roles()
+      : undefined
   const context: DashboardContext = {
     user,
     company: company.name,
-    currency: company.default_currency || "SAR",
+    currency: isAllCompanies(company.name)
+      ? company.default_currency
+      : company.default_currency || "SAR",
     companies,
     siteUrl: siteUrl(),
     ...(roles
       ? {
           roles,
-          ...(mapped ? { dashboardIds: Object.entries(config.dashboards)
-                .filter(([, mapping]) =>
-                  mapping.roles.some((role) => roles.includes(role)),
-                )
-                .map(([id]) => id as DashboardId) } : {}),
+          ...(mapped
+            ? {
+                dashboardIds: Object.entries(config.dashboards)
+                  .filter(([, mapping]) =>
+                    mapping.roles.some((role) => roles.includes(role))
+                  )
+                  .map(([id]) => id as DashboardId),
+              }
+            : {}),
         }
       : {}),
   }
   if (includeDashboardAccess) {
-    const reports = Object.fromEntries(Object.entries(config.dashboards).flatMap(([id, mapping]) => {
-      const report = config.reports?.find((r) => r.id === mapping.report && r.readValidated)
-      return mapping.mappingValidated && report ? [[id, report.erpName]] : []
-    }))
-    context.dashboardIds = await accessibleDashboards(erp, { ...context, roles: roles! }, timezone, reports)
+    const reports = Object.fromEntries(
+      Object.entries(config.dashboards).flatMap(([id, mapping]) => {
+        const report = config.reports?.find(
+          (r) => r.id === mapping.report && r.readValidated
+        )
+        return mapping.mappingValidated && report ? [[id, report.erpName]] : []
+      })
+    )
+    context.dashboardIds = await accessibleDashboards(
+      erp,
+      {
+        ...context,
+        company: isAllCompanies(context.company)
+          ? companies[0].name
+          : context.company,
+        roles: roles!,
+      },
+      timezone,
+      reports
+    )
   }
   return context
 }
 
 type Adapter = (
   context: DashboardContext,
-  period: DashboardData["period"],
+  period: DashboardData["period"]
 ) => Promise<DashboardData>
 // Register adapters only after the company provides data sources and definitions.
 // Supports ERPNext, Metabase, or another service through the same UI contract.
@@ -90,7 +116,7 @@ for (const id of nativeDashboardIds) {
       permissionedReader(await client(), context),
       id,
       context,
-      period,
+      period
     )
 }
 for (const id of operationalDashboardIds) {
@@ -100,7 +126,7 @@ for (const id of operationalDashboardIds) {
       erp,
       id,
       { ...context, roles: context.roles ?? (await erp.roles()) },
-      period,
+      period
     )
   }
 }
@@ -118,14 +144,14 @@ for (const [id, mapping] of Object.entries(platformConfig().dashboards)) {
 export async function loadDashboard(
   id: string,
   days: number,
-  selectedCompany?: string,
+  selectedCompany?: string
 ) {
   const definition = findDashboard(id)
   if (!definition) throw new ERPNextError("Dashboard not found.", 404)
   const pending = emptyDashboard(
     definition,
     businessDate(new Date(), timezone),
-    days,
+    days
   )
   const adapter = dashboardAdapters[definition.id]
   // Unmapped dashboards make no business-data requests.
@@ -133,13 +159,51 @@ export async function loadDashboard(
   const context = await loadContext(selectedCompany)
   if (context.dashboardIds && !context.dashboardIds.includes(definition.id))
     throw new ERPNextError("Dashboard access denied.", 403)
+  if (isAllCompanies(context.company)) {
+    const companyResults: NonNullable<DashboardData["companyResults"]> = []
+    for (const company of context.companies) {
+      try {
+        const data = await adapter(
+          {
+            ...context,
+            company: company.name,
+            currency: company.default_currency || "SAR",
+          },
+          pending.period
+        )
+        if (data.company !== company.name || data.dashboardId !== definition.id)
+          throw new ERPNextError(
+            "Dashboard returned data for a different company or view.",
+            502
+          )
+        companyResults.push({ company: company.name, data })
+        if (definition.scope === "erp-account") break
+      } catch (error) {
+        if (error instanceof ERPNextError && error.status === 401) throw error
+        companyResults.push({
+          company: company.name,
+          error:
+            error instanceof ERPNextError
+              ? error.message
+              : "Dashboard could not be loaded.",
+        })
+      }
+    }
+    return {
+      ...pending,
+      company: ALL_COMPANIES,
+      status: "ready" as const,
+      metrics: [],
+      companyResults,
+    }
+  }
   const result = await adapter(context, pending.period)
   if (
     result.dashboardId !== definition.id ||
     result.company !== context.company
   )
     throw new ERPNextError(
-      "Dashboard returned data for a different company or view.",
+      "Dashboard returned data for a different company or view."
     )
   return result
 }

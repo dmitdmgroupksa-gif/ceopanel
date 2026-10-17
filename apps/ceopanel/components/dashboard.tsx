@@ -1,4 +1,5 @@
 "use client"
+import { ALL_COMPANIES } from "@/lib/company-scope"
 import { sessionFetch as fetch } from "@/lib/session-fetch"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
@@ -82,14 +83,16 @@ export function Dashboard({
   const [active, setActive] = useState<DashboardId>(initialDashboard)
   const [days, setDays] = useState(initialDashboard === "approvals" ? 30 : 90)
   const [data, setData] = useState<DashboardData>(() =>
-    emptyDashboard(findDashboard(initialDashboard)!, config.today),
+    emptyDashboard(findDashboard(initialDashboard)!, config.today)
   )
   const [error, setError] = useState<string | null>(null)
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const [explicitDashboard, setExplicitDashboard] = useState(initialDashboard !== dashboards[0].id)
+  const [explicitDashboard, setExplicitDashboard] = useState(
+    initialDashboard !== dashboards[0].id
+  )
   const nav = useRef<HTMLDivElement>(null)
   const [scroll, setScroll] = useState({ left: false, right: false })
   const controller = useRef<AbortController | null>(null)
@@ -204,13 +207,13 @@ export function Dashboard({
     } catch (cause) {
       if (token === sequence.current && !abort.signal.aborted) {
         setData(
-          emptyDashboard(definition, config.today, days, context?.company),
+          emptyDashboard(definition, config.today, days, context?.company)
         )
         setLoadedKey(null)
         setError(
           cause instanceof Error
             ? cause.message
-            : "Dashboard data could not be loaded.",
+            : "Dashboard data could not be loaded."
         )
       }
     } finally {
@@ -237,14 +240,16 @@ export function Dashboard({
       () => {
         if (document.visibilityState === "visible") void refresh()
       },
-      active === "approvals" ? 300000 : 60000,
+      active === "approvals" ? 300000 : 60000
     )
     return () => clearInterval(timer)
   }, [data.status, busy, refresh, active])
 
   useEffect(() => {
     if (
-      !explicitDashboard && visibleDashboards.length &&
+      !explicitDashboard &&
+      !findDashboard(window.location.hash.slice(1)) &&
+      visibleDashboards.length &&
       !visibleDashboards.some((item) => item.id === active)
     )
       setActive(visibleDashboards[0].id)
@@ -287,7 +292,7 @@ export function Dashboard({
       setConnectionError(
         cause instanceof Error
           ? cause.message
-          : "ERPNext connection could not be loaded.",
+          : "ERPNext connection could not be loaded."
       )
     }
   }
@@ -375,13 +380,13 @@ export function Dashboard({
                 {t(
                   visibleDashboards.length || explicitDashboard
                     ? definition.title
-                    : "No dashboards assigned.",
+                    : "No dashboards assigned."
                 )}
               </h1>
               {!visibleDashboards.length && !explicitDashboard && (
                 <p className="mt-1.5 text-sm text-muted-foreground">
                   {t(
-                    "Ask your administrator to configure your department views.",
+                    "Ask your administrator to configure your department views."
                   )}
                 </p>
               )}
@@ -395,7 +400,11 @@ export function Dashboard({
                   disabled={!visibleDashboards.length}
                   onChange={(event) => navigate(event.target.value)}
                 >
-                  {!permitted && <option value="" disabled>{t("Choose dashboard")}</option>}
+                  {!permitted && (
+                    <option value="" disabled>
+                      {t("Choose dashboard")}
+                    </option>
+                  )}
                   {visibleDashboards.map((item) => (
                     <option key={item.id} value={item.id}>
                       {t(item.title)}
@@ -417,6 +426,7 @@ export function Dashboard({
                     value={context.company}
                     onChange={(event) => void connect(event.target.value)}
                   >
+                    <option value={ALL_COMPANIES}>{t("All Companies")}</option>
                     {context.companies.map((item) => (
                       <option key={item.name} value={item.name}>
                         {item.name}
@@ -436,21 +446,21 @@ export function Dashboard({
                     {t(
                       definition.window === "upcoming"
                         ? "Next 30 days"
-                        : "Last 30 days",
+                        : "Last 30 days"
                     )}
                   </option>
                   <option value={90}>
                     {t(
                       definition.window === "upcoming"
                         ? "Next 90 days"
-                        : "Last 90 days",
+                        : "Last 90 days"
                     )}
                   </option>
                   <option value={365}>
                     {t(
                       definition.window === "upcoming"
                         ? "Next 12 months"
-                        : "Last 12 months",
+                        : "Last 12 months"
                     )}
                   </option>
                 </select>
@@ -490,19 +500,25 @@ export function Dashboard({
           {!permitted && explicitDashboard ? (
             <section role="alert" className="rounded-lg border bg-muted/20 p-8">
               <h2 className="font-medium">{t("No access")}</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{t("Your Frappe permissions do not allow this dashboard. Choose an available dashboard or ask your ERP administrator.")}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t(
+                  "Your Frappe permissions do not allow this dashboard. Choose an available dashboard or ask your ERP administrator."
+                )}
+              </p>
             </section>
-          ) : visibleDashboards.map((item) => (
-            <TabsContent key={item.id} value={item.id}>
-              <DashboardPanel
-                definition={item}
-                data={visibleData}
-                siteUrl={context?.siteUrl}
-                loading={busy}
-                failed={!!error}
-              />
-            </TabsContent>
-          ))}
+          ) : (
+            visibleDashboards.map((item) => (
+              <TabsContent key={item.id} value={item.id}>
+                <DashboardPanel
+                  definition={item}
+                  data={visibleData}
+                  siteUrl={context?.siteUrl}
+                  loading={busy}
+                  failed={!!error}
+                />
+              </TabsContent>
+            ))
+          )}
         </main>
       </Tabs>
     </div>

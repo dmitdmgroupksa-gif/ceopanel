@@ -7,6 +7,56 @@ model, platform database or Redis worker is required by these views.
 
 ## Explorer
 
+The workspace's **Custom DocTypes** and **Custom reports** tabs now load complete
+native ERP metadata catalogs, rather than the manually configured module/report
+lists. Their searchable dropdowns are not limited to the first discovery page.
+The DocType picker includes standard and custom business types, including business
+types shipped by custom apps. Refresh reloads the ERP catalog. Metadata visibility
+is not permission to read a record: opening, listing, inspecting and running each
+source still checks the authenticated user's native permissions. Security/settings
+sources and independent child-table access retain the existing exclusions.
+
+Selecting a DocType automatically loads its first record page. Search and the
+record table are the main flow; column choices and advanced filters are collapsed.
+The workspace section tabs have visible labels as well as icons. Explorer search,
+saved sources, workflow inspection and exports remain available.
+
+### All Companies
+
+Company selectors offer **All Companies** alongside the current native Company
+list. This is an application scope, never a new ERP Company or permission grant.
+Company-owned native lists use an `in` filter containing only the freshly verified
+Company names and reject rows outside that set. Native record/field permissions
+remain authoritative; shared/unscoped sources remain identified as such.
+
+Dashboards retain separate company results and currencies; they do not add financial
+figures across currencies. Account-scoped dashboards run once. Company report filters
+can select All Companies: the report runs independently for each current permitted
+company, with separate tables, native errors and exports. Saved report filters and
+custom report scope warnings still apply. Briefings load each company when its
+section is opened. Personal platform lists retain owner/evidence checks while
+reading the selected permitted companies, and MCP grants can retain this scope.
+
+### Connection handling
+
+Non-dashboard session checks request identity, roles and Company access without
+scanning every dashboard source. Opening dashboards still checks their native
+source/field permissions before exposing navigation. Native query and saved-report
+execution have a 60-second transport budget; ordinary metadata/record calls retain
+their 15-second limit. One interrupted GET connection can retry once. Permission
+denials, timed-out expensive queries and POSTs are not retried. Network interruptions,
+ERP timeouts, validation failures and rate limits have distinct errors; real failures
+are not replaced by empty data or hidden connection messages.
+Rejected response streams are released instead of leaving unread ERP error bodies
+holding upstream connections, including denied file downloads.
+
+Fresh GET-only checks on 17 October found 731 business DocType entries and 754 enabled
+report entries in the API account's native metadata catalogs. A bounded All Companies
+Sales Order read passed its company-scope check. The verification made 42 GET requests,
+logged only status/counts/timing and made no ERP business writes. Identity, roles,
+companies and discovery all connected successfully; a persistent remote outage was
+not reproduced. These catalog counts do not establish every employee's execution rights.
+
 - Search enabled reports and standard/custom business DocTypes by source name,
   module and reference type. Discovery pages contain 20 candidates; metadata
   discovery is not proof of report execution access. Native permissions are
@@ -39,7 +89,7 @@ model, platform database or Redis worker is required by these views.
 
 The same broad business-reader approval used by existing MCP reading applies:
 `ERP_AI_READ_ENABLED=true` and an allowed native role in `ERP_AI_READ_ROLES`
-(default `System Manager`). The historical environment names do not make a model
+(default `Desk User,System Manager`). The historical environment names do not make a model
 mandatory. Native ERP row, field, child-parent and report permissions still apply.
 Security/settings sources, credential fields and standalone child tables stay
 excluded. The discovery API key is never used as a browser authentication fallback.
@@ -82,7 +132,7 @@ workflow creation window and account-scoped custom records.
 ## HTTP and verification
 
 `POST /api/erp/explorer` carries read criteria in the body to keep them out of URL
-logs. Fixed actions are `sources`, `schema`, `records`, `document`, `report`,
+logs. Fixed actions are `catalog`, `sources`, `schema`, `records`, `document`, `report`,
 `run-report`, `workflow`, `attachments` and `export`; no arbitrary method or write
 action is accepted. Origin/body-size checks, native session/Company verification,
 strict request schemas and private/no-store responses protect the boundary.

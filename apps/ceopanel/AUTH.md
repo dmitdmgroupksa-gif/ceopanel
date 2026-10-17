@@ -10,7 +10,25 @@ Ordinary record-permission failures remain 403 and do not clear a valid session.
 
 Passwords go only through the same-origin, size-limited session endpoint to the configured HTTPS ERP origin. They are never stored locally. The issued SID is verified with `frappe.auth.get_logged_user`, then held in an HttpOnly, SameSite=Lax cookie with Secure in production. Native Frappe attempt controls remain authoritative. Login and logout reject foreign origins, use timeouts, and do not cache responses. Return paths allow only company pages and the existing explicit MCP consent route.
 
-Native v14 two-factor login uses Frappe's `tmp_id` and `otp` contract. The temporary ID is in an HttpOnly cookie for at most five minutes; Frappe enforces its shorter method-specific expiry. The browser submits only the six-digit code on the second step. Frappe handles delivery and authenticator enrollment emails. No bypass for mandatory 2FA exists. Invalid/expired codes can be retried or the login restarted. SSO-only accounts require their provider's separate flow.
+Native v14 two-factor login uses Frappe's `tmp_id` and `otp` contract. The temporary ID is in an HttpOnly cookie for at most five minutes; Frappe enforces its shorter method-specific expiry. The browser submits only the six-digit code on the second step. Frappe handles delivery and authenticator enrollment emails. No bypass for mandatory 2FA exists. Invalid/expired codes can be retried or the login restarted.
+
+## Native Frappe authorization login
+
+When `FRAPPE_OAUTH_CLIENT_ID` and `FRAPPE_OAUTH_CLIENT_SECRET` are configured,
+the existing login screen offers **Sign in on Frappe**. External MCP consent also
+redirects unauthenticated users to Frappe. Frappe controls its login, two-factor
+and provider behavior; the panel exchanges the authorization code server-side.
+See [FRAPPE-OAUTH.md](deploy/FRAPPE-OAUTH.md) for exact client registration,
+callback, migration and deployment steps. This path needs the platform database.
+
+Browser-bound one-use state and PKCE S256 bind the authorization response.
+Personal access/refresh tokens are encrypted in the private database; only an
+opaque session identifier reaches the browser. Every MCP request verifies the
+native identity and current roles/companies. Business reads retain Frappe's row,
+field and report checks. No employee read falls back to the discovery API key.
+Sign-out revokes the local OAuth session before attempting Frappe token revocation.
+Until the OAuth Client is registered, the existing native password/SID flow remains
+available. Native OAuth and restricted-employee acceptance still require live setup.
 
 Logout calls the native current-session logout endpoint, then clears local SID and challenge cookies. If upstream revocation fails, the browser still signs out and receives an explicit warning. Existing MCP grants remain bound to their native session and are subject to native identity checks.
 

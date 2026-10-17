@@ -1,5 +1,6 @@
 import { MCPConsent } from "@/components/mcp-consent"
 import { siteUrl } from "@/lib/erpnext-server"
+import { frappeOAuthConfigured } from "@/lib/frappe-oauth"
 export const dynamic = "force-dynamic"
 export default async function Page({
   searchParams,
@@ -10,5 +11,11 @@ export default async function Page({
     query = new URLSearchParams()
   for (const [key, value] of Object.entries(params))
     if (typeof value === "string") query.set(key, value)
-  return <MCPConsent query={query.toString()} siteUrl={siteUrl()} />
+  return (
+    <MCPConsent
+      query={query.toString()}
+      siteUrl={siteUrl()}
+      frappeLogin={frappeOAuthConfigured()}
+    />
+  )
 }

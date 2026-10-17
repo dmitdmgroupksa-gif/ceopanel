@@ -75,3 +75,52 @@ the production acceptance work described in the application audit.
 References: [OpenAI tool authentication](https://developers.openai.com/plugins/build/auth),
 [OpenAI tool metadata reference](https://developers.openai.com/plugins/reference),
 [ChatGPT connection and test flow](https://developers.openai.com/plugins/deploy/connect-chatgpt).
+
+## Personal authentication and permissions follow-up
+
+The original integration already delegated each external grant to the consenting
+user's native ERP session. It did not use the discovery API key for employee data
+reads. This follow-up adds native Frappe OAuth login, fixes ordinary employee
+discovery/setup, and removes the original-company restriction on ERP-wide grants.
+
+- Native Frappe authorization uses browser-bound one-use state, PKCE S256, a fixed
+  registered callback and server-side token exchange. Personal tokens are encrypted
+  in platform migration 006; browser sessions remain opaque. Logout revokes the
+  local session before attempting upstream revocation. Refresh checks the owner.
+- Every MCP request refreshes the native identity, roles and Company list. The new
+  `erp_list_companies` tool lists that user's current choices. Losing the original
+  consent company does not block their other permitted companies. Positive Company
+  selectors are checked against the current list; native ERP permissions remain
+  authoritative for records, fields, reports and report-specific scope.
+- Ordinary Desk users can use personal MCP setup. Connection listing/revocation
+  filters by authenticated owner across companies. A configured role allowlist
+  still restricts access. Docker's PGHOST database settings are recognized.
+- Custom business DocTypes assigned to framework modules are no longer excluded
+  solely by module. Native Link metadata discovery works when administrative
+  DocType listing is denied, without ignoring business permissions. Frappe v14's
+  translated catalog ignores offsets, so it is fetched once with a size limit.
+- Dashboard navigation checks actual adapter sources and required field levels
+  without loading business rows. Denied views are hidden; direct links display
+  **No access**. Upstream outages and expired authentication are not disguised as
+  empty or forbidden dashboards. Chart series use distinct light/dark colours.
+
+Live GET-only checks found three oil-change reports backed by Vehicle, rather
+than a DocType named Oil Change Report. All three definitions were authorized;
+the saved alert report executed with 72 rows and seven columns. The other two
+Query Reports were not executed. A metadata-only dashboard check found 17
+connected views. These checks used the local API audit identity and do not
+establish restricted employees' access. No live ERP business writes occurred.
+
+Native Frappe OAuth is prepared but cannot be activated or accepted against the
+live ERP until its OAuth Client exists. Follow [FRAPPE-OAUTH.md](deploy/FRAPPE-OAUTH.md)
+for exact registration fields, private environment settings, migration and EC2
+restart commands. Verify separate restricted employees and real external-client
+behavior after configuration. The existing password/SID login remains usable
+until native OAuth is configured.
+
+Final local verification: 354 unit/protocol tests and 45 disposable database
+integration tests passed. All 118 desktop/mobile browser cases passed, with two
+new selector mistakes corrected and those cases rerun. Strict TypeScript and
+the production build passed. A client scan checked 64 built files against four
+configured server secrets and encoded forms with no matches. This code has not
+been deployed to AWS as part of this follow-up.

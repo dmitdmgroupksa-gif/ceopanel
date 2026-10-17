@@ -4,7 +4,15 @@ export type NativeSchema = Awaited<ReturnType<Reader["describe"]>>
 export type NativeDocument = Awaited<ReturnType<Reader["document"]>>
 export type NativeRecords = Awaited<ReturnType<Reader["search"]>>
 export type NativeReport = Awaited<ReturnType<Reader["report"]>>
-export type NativeReportResult = Awaited<ReturnType<Reader["runReport"]>>
+export type NativeReportResult = Awaited<ReturnType<Reader["runReport"]>> & {
+  companyResults?: {
+    company: string
+    currency: string
+    result?: Awaited<ReturnType<Reader["runReport"]>>
+    error?: string
+    filters: Record<string, unknown>
+  }[]
+}
 export type NativeWorkflow = Awaited<ReturnType<Reader["approvals"]>>
 export type NativeField = {
   fieldname: string

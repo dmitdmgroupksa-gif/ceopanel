@@ -31,13 +31,16 @@ export function safeBusinessType(meta: {
   issingle?: number
   istable?: number
   module?: string
+  custom?: number | boolean
 }) {
   return (
     !meta.issingle &&
     !meta.istable &&
-    !/^(Core|Email|Integrations|OAuth|Website|Social|Printing)$/.test(
+    (!/^(Core|Email|Integrations|OAuth|Website|Social|Printing)$/.test(
       meta.module || "",
-    ) &&
+    ) ||
+      meta.custom === 1 ||
+      meta.custom === true) &&
     !/(?:Settings?|Credentials?|Secrets?|Tokens?|Passwords?|API Keys?|OAuth|Session|User Permission|DocPerm|Authentication|Webhook|Server Script|Client Script|Connected App|Integration Request)/i.test(
       meta.name,
     ) &&

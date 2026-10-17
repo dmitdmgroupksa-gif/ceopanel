@@ -19,10 +19,12 @@ export function LoginPage({
   companyName,
   siteUrl,
   previewEnabled = false,
+  frappeLogin = false,
 }: {
   companyName: string
   siteUrl: string
   previewEnabled?: boolean
+  frappeLogin?: boolean
 }) {
   const { t } = useLocale()
   const [expired, setExpired] = useState(false)
@@ -133,7 +135,23 @@ export function LoginPage({
               )}
             </p>
           )}
-          <LoginForm siteUrl={siteUrl} onConnected={connected} />
+          {frappeLogin ? (
+            <Button
+              className="w-full"
+              onClick={() => {
+                const next = safeReturnPath(
+                  new URLSearchParams(window.location.search).get("next"),
+                )
+                window.location.assign(
+                  `/api/erpnext/oauth/start?${new URLSearchParams({ next })}`,
+                )
+              }}
+            >
+              {t("Sign in on Frappe")}
+            </Button>
+          ) : (
+            <LoginForm siteUrl={siteUrl} onConnected={connected} />
+          )}
           {previewEnabled && (
             <Button asChild variant="outline" className="mt-3 h-11 w-full">
               <Link href="/">{t("Open local preview")}</Link>

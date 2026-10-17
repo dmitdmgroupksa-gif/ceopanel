@@ -15,16 +15,33 @@ export type MCPConnectionSettings = {
   reason: string | null
 }
 
-export function mcpConnectionSettings(context: UserContext): MCPConnectionSettings {
-  let endpoint: string | null = null, reason: string | null = null
+export function mcpConnectionSettings(
+  context: UserContext,
+): MCPConnectionSettings {
+  let endpoint: string | null = null,
+    reason: string | null = null
   const erpRead = nativeReadAccess(context)
   try {
     endpoint = `${externalOrigin()}/api/mcp`
     externalReady()
-    if (!process.env.DATABASE_URL) reason = "MCP connection storage is not configured."
-    else if (!aiDataApproved() || !erpRead) reason = "ERP reading is not enabled for your account. Ask your administrator."
+    if (!process.env.DATABASE_URL && !process.env.PGHOST)
+      reason = "MCP connection storage is not configured."
+    else if (!aiDataApproved() || !erpRead)
+      reason =
+        "ERP reading is not enabled for your account. Ask your administrator."
   } catch (error) {
-    reason = error instanceof ERPNextError ? error.message : "External MCP is unavailable."
+    reason =
+      error instanceof ERPNextError
+        ? error.message
+        : "External MCP is unavailable."
   }
-  return { user: context.user, company: context.company, endpoint, ready: !reason, erpRead, scopes: ["ceopanel:read", ...(erpRead ? ["ceopanel:erp-read"] : [])], reason }
+  return {
+    user: context.user,
+    company: context.company,
+    endpoint,
+    ready: !reason,
+    erpRead,
+    scopes: ["ceopanel:read", ...(erpRead ? ["ceopanel:erp-read"] : [])],
+    reason,
+  }
 }

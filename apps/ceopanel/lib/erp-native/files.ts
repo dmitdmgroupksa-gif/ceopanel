@@ -9,6 +9,7 @@ import type { UserContext } from "../platform/policy"
 import { erpReader, reportFilters } from "./reader"
 import { spreadsheetText } from "../spreadsheet"
 import { validateERPFilePath } from "../erp-file-path"
+import { companyLabel } from "../company-scope"
 export { spreadsheetText } from "../spreadsheet"
 
 const id = z.string().min(1).max(180)
@@ -44,7 +45,7 @@ export type FileDescriptor = {
 export class ERPFileResult {
   constructor(
     public data: { file: FileDescriptor },
-    public blob?: Buffer,
+    public blob?: Buffer
   ) {}
 }
 const mimeTypes = {
@@ -65,7 +66,7 @@ export function exportToken(request: ExportRequest) {
   if (token.length > 10000)
     throw new ERPNextError(
       "File request is too long. Use fewer report filters.",
-      413,
+      413
     )
   return token
 }
@@ -74,7 +75,7 @@ export function parseExportToken(token: string) {
     throw new ERPNextError("Invalid ERP file request.", 400)
   try {
     return exportSchema.parse(
-      JSON.parse(Buffer.from(token, "base64url").toString("utf8")),
+      JSON.parse(Buffer.from(token, "base64url").toString("utf8"))
     )
   } catch {
     throw new ERPNextError("Invalid ERP file request.", 400)
@@ -95,12 +96,12 @@ export async function reportPDF(
     rows: Record<string, unknown>[]
     totalRowIncluded: boolean
   },
-  company: string,
+  company: string
 ) {
   if (report.rows.length > 500)
     throw new ERPNextError(
       "PDF exports support up to 500 report rows. Narrow the report or use CSV/XLSX for the complete result.",
-      413,
+      413
     )
   if (
     report.columns.length * report.rows.length > 8000 ||
@@ -108,7 +109,7 @@ export async function reportPDF(
   )
     throw new ERPNextError(
       "This report is too wide or text-heavy for PDF. Narrow it or use CSV/XLSX; no rows were truncated.",
-      413,
+      413
     )
   const font = (name: string) =>
     readFileSync(path.join(process.cwd(), "lib/erp-native/fonts", name))
@@ -135,9 +136,9 @@ export async function reportPDF(
       reject(
         new ERPNextError(
           "Report PDF could not be generated within the file size limit.",
-          413,
-        ),
-      ),
+          413
+        )
+      )
     )
   })
   function text(value: string, fontSize = 9) {
@@ -150,7 +151,7 @@ export async function reportPDF(
         .font(
           /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/.test(part)
             ? "arabic"
-            : "latin",
+            : "latin"
         )
         .fontSize(fontSize)
         .text(part, {
@@ -164,7 +165,7 @@ export async function reportPDF(
   text(`Filters: ${JSON.stringify(report.filters)}`, 8)
   text(
     `${report.rows.length} rows. Native total row included: ${report.totalRowIncluded ? "yes" : "no"}.`,
-    8,
+    8
   )
   for (const [index, row] of report.rows.entries()) {
     pdf.moveDown(0.7)
@@ -191,7 +192,7 @@ export async function erpExport(
   erp: ERPNextClient,
   context: UserContext,
   raw: unknown,
-  embedded: boolean,
+  embedded: boolean
 ): Promise<ERPFileResult> {
   const request = exportSchema.parse(raw),
     reader = erpReader(erp, context)
@@ -209,7 +210,7 @@ export async function erpExport(
         ...(request.printFormat ? { format: request.printFormat } : {}),
       })
       blob = await erp.binary(
-        `/api/method/frappe.utils.print_format.download_pdf?${params}`,
+        `/api/method/frappe.utils.print_format.download_pdf?${params}`
       )
       if (blob.subarray(0, 5).toString() !== "%PDF-")
         throw new ERPNextError("ERP did not return a valid PDF.")
@@ -220,7 +221,7 @@ export async function erpExport(
     reportFilters(
       { ...description.defaultFilters, ...request.filters },
       description.filters || [],
-      description.reportType === "Report Builder",
+      description.reportType === "Report Builder"
     )
     await reader.permission(description.doctype, "", "export")
     name = filename(request.report, request.format)
@@ -228,18 +229,18 @@ export async function erpExport(
     if (embedded) {
       const report = await reader.runReport(request.report, request.filters)
       if (request.format === "pdf")
-        blob = await reportPDF(report, context.company)
+        blob = await reportPDF(report, companyLabel(context.company))
       else if (request.format === "csv") {
         const csv = [
           report.columns.map((c: any) => c.label),
           ...report.rows.map((r: any) =>
-            report.columns.map((c: any) => r[c.fieldname]),
+            report.columns.map((c: any) => r[c.fieldname])
           ),
         ]
           .map((row) =>
             row
               .map((v: any) => `"${spreadsheetText(v).replace(/"/g, '""')}"`)
-              .join(","),
+              .join(",")
           )
           .join("\r\n")
         blob = Buffer.from(`\uFEFF${csv}`, "utf8")
@@ -252,8 +253,8 @@ export async function erpExport(
             report.columns.map((c: any) =>
               typeof row[c.fieldname] === "number"
                 ? row[c.fieldname]
-                : spreadsheetText(row[c.fieldname]),
-            ),
+                : spreadsheetText(row[c.fieldname])
+            )
           )
         blob = Buffer.from(await workbook.xlsx.writeBuffer())
       }
@@ -271,7 +272,7 @@ export async function erpExport(
     )
       throw new ERPNextError(
         "Only files attached to a permitted business record can be downloaded.",
-        403,
+        403
       )
     await reader.document(file.attached_to_doctype, file.attached_to_name)
     const ext = String(file.file_name || "")
@@ -291,7 +292,7 @@ export async function erpExport(
     if (!allowed[ext])
       throw new ERPNextError(
         "Unsupported attachment format. Use PDF, CSV, XLSX, DOCX, PNG, JPEG or text.",
-        400,
+        400
       )
     const path = String(file.file_url || "")
     validateERPFilePath(path)
@@ -312,6 +313,6 @@ export async function erpExport(
         note: "Access checked under current ERP permissions. Link delivery regenerates the export on access; attachment rendering depends on the MCP client.",
       },
     },
-    blob,
+    blob
   )
 }

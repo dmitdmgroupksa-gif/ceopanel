@@ -5,6 +5,7 @@ import { Button } from "./ui/button"
 import { useLocale } from "./locale-provider"
 import { NativeReadTable, NativeValueInput } from "./native-read-controls"
 import { explorerRead, downloadERPFile } from "@/lib/explorer-client"
+import { useSession } from "./session-provider"
 import type {
   NativeReport,
   NativeReportResult,
@@ -19,10 +20,11 @@ export function NativeReportView({
   company: string
 }) {
   const { t } = useLocale()
+  const { context } = useSession()
   const [filters, setFilters] = useState<Record<string, unknown>>({
     ...description.defaultFilters,
     ...(description.filters.some(
-      (f) => f.fieldname === "company" && f.options === "Company",
+      (f) => f.fieldname === "company" && f.options === "Company"
     ) && !Object.hasOwn(description.defaultFilters, "company")
       ? { company }
       : {}),
@@ -35,7 +37,7 @@ export function NativeReportView({
   ])
   const [result, setResult] = useState<NativeReportResult | null>(null)
   const [runFilters, setRunFilters] = useState<Record<string, unknown> | null>(
-    null,
+    null
   )
   const [error, setError] = useState("")
   const [busy, setBusy] = useState("")
@@ -43,7 +45,7 @@ export function NativeReportView({
   useEffect(() => () => controller.current?.abort(), [])
   const definitions: NativeField[] = description.filters
   const visible = definitions.filter(
-    (f) => f.required || optional.includes(f.fieldname),
+    (f) => f.required || optional.includes(f.fieldname)
   )
   async function run(event: React.FormEvent) {
     event.preventDefault()
@@ -69,8 +71,8 @@ export function NativeReportView({
             v !== undefined &&
             v !== "" &&
             v !== null &&
-            !(Array.isArray(v) && !v.length),
-        ),
+            !(Array.isArray(v) && !v.length)
+        )
     )
     try {
       if (
@@ -79,14 +81,14 @@ export function NativeReportView({
             f.fieldtype === "DateRange" &&
             Object.hasOwn(input, f.fieldname) &&
             (!Array.isArray(input[f.fieldname]) ||
-              input[f.fieldname].length !== 2),
+              input[f.fieldname].length !== 2)
         )
       )
         throw new Error("Date range filters require two dates.")
       const data = await explorerRead<NativeReportResult>(
         company,
         { action: "run-report", report: description.name, filters: input },
-        abort.signal,
+        abort.signal
       )
       if (!abort.signal.aborted) {
         setResult(data)
@@ -98,7 +100,10 @@ export function NativeReportView({
       if (!abort.signal.aborted) setBusy("")
     }
   }
-  async function download(format: "pdf" | "csv" | "xlsx") {
+  async function download(
+    format: "pdf" | "csv" | "xlsx",
+    selectedFilters = runFilters
+  ) {
     if (!runFilters) return
     const abort = new AbortController()
     controller.current = abort
@@ -110,10 +115,10 @@ export function NativeReportView({
         {
           kind: "report",
           report: description.name,
-          filters: runFilters,
+          filters: selectedFilters!,
           format,
         },
-        abort.signal,
+        abort.signal
       )
     } catch (e) {
       if (!abort.signal.aborted) setError((e as Error).message)
@@ -145,6 +150,7 @@ export function NativeReportView({
           {visible.map((field) => (
             <div key={field.fieldname} className="space-y-2">
               <NativeValueInput
+                companies={context?.companies}
                 field={field}
                 value={filters[field.fieldname]}
                 disabled={!!busy}
@@ -158,7 +164,7 @@ export function NativeReportView({
                   disabled={!!busy}
                   onClick={() => {
                     setOptional((fields) =>
-                      fields.filter((f) => f !== field.fieldname),
+                      fields.filter((f) => f !== field.fieldname)
                     )
                     edit(field.fieldname, undefined)
                   }}
@@ -170,7 +176,7 @@ export function NativeReportView({
           ))}
         </div>
         {definitions.some(
-          (f) => !f.required && !optional.includes(f.fieldname),
+          (f) => !f.required && !optional.includes(f.fieldname)
         ) && (
           <label className="block space-y-2 text-sm">
             <span>{t("Add report filter")}</span>
@@ -215,7 +221,54 @@ export function NativeReportView({
           {t(error)}
         </p>
       )}
-      {result && (
+      {result?.companyResults && (
+        <div className="space-y-6">
+          {result.companyResults.map((part) => (
+            <section
+              key={part.company}
+              className="space-y-3 rounded-lg border p-4"
+            >
+              <h3 className="font-semibold">
+                {part.company} · {part.currency}
+              </h3>
+              {part.error ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {t(part.error)}
+                </p>
+              ) : (
+                part.result && (
+                  <>
+                    <p className="text-sm">
+                      {part.result.rowCount} {t("Rows returned")}
+                    </p>
+                    <div className="flex gap-2">
+                      {(["csv", "xlsx", "pdf"] as const).map((format) => (
+                        <Button
+                          key={format}
+                          variant="outline"
+                          size="sm"
+                          disabled={!!busy}
+                          onClick={() => void download(format, part.filters)}
+                        >
+                          {format.toUpperCase()}
+                        </Button>
+                      ))}
+                    </div>
+                    <NativeReadTable
+                      columns={part.result.columns}
+                      rows={part.result.rows}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t(part.result.note)}
+                    </p>
+                  </>
+                )
+              )}
+            </section>
+          ))}
+        </div>
+      )}
+      {result && !result.companyResults && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm">
@@ -245,7 +298,7 @@ export function NativeReportView({
           </div>
           <p className="text-xs text-muted-foreground">
             {t(
-              "Downloads rerun these filters using your current ERP permissions.",
+              "Downloads rerun these filters using your current ERP permissions."
             )}
           </p>
           <NativeReadTable columns={result.columns} rows={result.rows} />

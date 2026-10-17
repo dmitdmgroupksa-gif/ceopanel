@@ -76,7 +76,7 @@ const sources = {
 }
 async function reads(
   page: Page,
-  extra?: (body: Record<string, any>) => unknown,
+  extra?: (body: Record<string, any>) => unknown
 ) {
   await page.route("**/api/erp/explorer", async (route) => {
     const body = route.request().postDataJSON()
@@ -184,7 +184,7 @@ async function reads(
     route.fulfill({
       body: "Invoice,Amount\nINV-1,42",
       headers: { "Content-Type": "text/csv" },
-    }),
+    })
   )
 }
 
@@ -213,7 +213,7 @@ test("native reports require real filters, preserve native values in Arabic, dow
     region: "North",
   })
   await expect(
-    page.getByText("يشمل صف الإجمالي من ERP", { exact: false }),
+    page.getByText("يشمل صف الإجمالي من ERP", { exact: false })
   ).toBeVisible()
   const file = page.waitForEvent("download")
   await page.getByRole("button", { name: "CSV", exact: true }).click()
@@ -221,7 +221,7 @@ test("native reports require real filters, preserve native values in Arabic, dow
   await page.getByLabel("From date").fill("2026-10-02")
   await expect(page.getByText("INV-1", { exact: true })).toHaveCount(0)
   await expect(
-    page.getByRole("button", { name: "CSV", exact: true }),
+    page.getByRole("button", { name: "CSV", exact: true })
   ).toHaveCount(0)
 })
 
@@ -242,19 +242,19 @@ test("custom record details, child rows, actual workflow branches and attachment
   await expect(dialog.getByText("Pending", { exact: true })).toBeVisible()
   await dialog.locator("summary").filter({ hasText: "Items" }).click()
   await expect(
-    dialog.getByText("Requested equipment", { exact: true }),
+    dialog.getByText("Requested equipment", { exact: true })
   ).toBeVisible()
   await dialog
     .getByRole("button", { name: "Inspect workflow", exact: true })
     .click()
   await expect(
-    dialog.getByRole("heading", { name: "Workflow inspection", exact: true }),
+    dialog.getByRole("heading", { name: "Workflow inspection", exact: true })
   ).toBeVisible()
   await expect(
-    dialog.getByText("Operations Manager", { exact: true }).first(),
+    dialog.getByText("Operations Manager", { exact: true }).first()
   ).toBeVisible()
   await expect(
-    dialog.getByRole("button", { name: "Approve", exact: true }),
+    dialog.getByRole("button", { name: "Approve", exact: true })
   ).toHaveCount(0)
   await dialog
     .getByRole("button", { name: "Load attachments", exact: true })
@@ -274,16 +274,16 @@ test("custom record details, child rows, actual workflow branches and attachment
         "document",
         "workflow",
         "attachments",
-      ].includes(c.action),
-    ),
+      ].includes(c.action)
+    )
   ).toBe(true)
   await dialog.getByRole("button", { name: "Close", exact: true }).click()
   await page.getByRole("button", { name: "Save source", exact: true }).click()
   const stored = await page.evaluate(
     () =>
       Object.entries(localStorage).find(([k]) =>
-        k.startsWith("ceopanel-explorer:"),
-      )?.[1],
+        k.startsWith("ceopanel-explorer:")
+      )?.[1]
   )
   expect(stored).toContain("Custom Requests")
   expect(stored).not.toContain("REQ-1")
@@ -316,20 +316,20 @@ test("source failures clear old results and later metadata cannot replace a newe
   await expect(
     page
       .getByRole("alert")
-      .filter({ hasText: "Report execution permission denied." }),
+      .filter({ hasText: "Report execution permission denied." })
   ).toHaveText("Report execution permission denied.")
   await page.waitForTimeout(1000)
   await expect(
-    page.getByRole("button", { name: "Load records", exact: true }),
+    page.getByRole("button", { name: "Load records", exact: true })
   ).toHaveCount(0)
   await expect(
-    page.getByRole("button", { name: "Save source", exact: true }),
+    page.getByRole("button", { name: "Save source", exact: true })
   ).toBeDisabled()
   await page.getByRole("button", { name: "Try again", exact: true }).click()
   await expect(
     page
       .getByRole("alert")
-      .filter({ hasText: "Report execution permission denied." }),
+      .filter({ hasText: "Report execution permission denied." })
   ).toHaveText("Report execution permission denied.")
 })
 
@@ -389,24 +389,24 @@ test("daily briefing distinguishes denied sources, unknown metrics and account s
               },
             ],
           },
-        }),
+        })
   )
   await page.goto("/workspace#briefing")
   await expect(page.getByText("1,200.00", { exact: false })).toBeVisible()
   await expect(
-    page.getByText("Workflow access denied.", { exact: true }),
+    page.getByText("Workflow access denied.", { exact: true })
   ).toBeVisible()
   await expect(page.getByText("Unavailable", { exact: true })).toBeVisible()
   await expect(
-    page.getByText("ERP account scope", { exact: false }).first(),
+    page.getByText("ERP account scope", { exact: false }).first()
   ).toBeVisible()
   await expect(
-    page.getByRole("link", { name: "View source dashboard", exact: false }),
+    page.getByRole("link", { name: "View source dashboard", exact: false })
   ).toHaveCount(2)
   expect(
     await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
+      () => document.documentElement.scrollWidth <= innerWidth
+    )
   ).toBe(true)
   await page.screenshot({
     path: `../../.codex-artifacts/ceopanel/daily-brief-${test.info().project.name}.png`,
@@ -417,7 +417,7 @@ test("daily briefing distinguishes denied sources, unknown metrics and account s
     .getByRole("button", { name: "Refresh briefing", exact: true })
     .click()
   await expect(
-    page.getByRole("alert").filter({ hasText: "ERP unavailable" }),
+    page.getByRole("alert").filter({ hasText: "ERP unavailable" })
   ).toHaveText("ERP unavailable")
   await expect(page.getByText("1,200.00", { exact: false })).toHaveCount(0)
 })
@@ -433,6 +433,7 @@ test("record ranges preserve multiline input and apply structured native filters
   await page
     .getByRole("button", { name: /^Custom Requests Record type/ })
     .click()
+  await page.getByText("Advanced filters", { exact: true }).click()
   await page
     .getByRole("button", { name: "Add record filter", exact: true })
     .click()
@@ -446,13 +447,11 @@ test("record ranges preserve multiline input and apply structured native filters
   await expect(input).toHaveValue("REQ-1\nREQ-9")
   await page.getByRole("button", { name: "Load records", exact: true }).click()
   await expect(
-    page.getByRole("button", { name: "REQ-1", exact: true }),
+    page.getByRole("button", { name: "REQ-1", exact: true })
   ).toBeVisible()
-  expect(calls.find((c) => c.action === "records")!.filters).toContainEqual([
-    "name",
-    "between",
-    ["REQ-1", "REQ-9"],
-  ])
+  expect(
+    calls.filter((c) => c.action === "records").at(-1)!.filters
+  ).toContainEqual(["name", "between", ["REQ-1", "REQ-9"]])
 })
 
 test("changing company clears source details and keeps saved sources scoped to the account and company", async ({
@@ -469,7 +468,7 @@ test("changing company clears source details and keeps saved sources scoped to t
         companies: [{ name: "Company A" }, { name: "Company B" }],
         siteUrl: "https://example.frappe.cloud",
       },
-    }),
+    })
   )
   const calls: Record<string, any>[] = []
   await reads(page, (body) => {
@@ -480,26 +479,26 @@ test("changing company clears source details and keeps saved sources scoped to t
     .getByRole("button", { name: /^Custom Requests Record type/ })
     .click()
   await expect(
-    page.getByRole("heading", { name: "Custom Requests", exact: true }),
+    page.getByRole("heading", { name: "Custom Requests", exact: true })
   ).toBeVisible()
   await page.getByRole("button", { name: "Save source", exact: true }).click()
   await expect(
-    page.locator("summary").filter({ hasText: "Saved sources" }),
+    page.locator("summary").filter({ hasText: "Saved sources" })
   ).toBeVisible()
   await page
     .getByLabel("Select company", { exact: true })
     .selectOption("Company B")
   await expect(
-    page.getByRole("heading", { name: "Custom Requests", exact: true }),
+    page.getByRole("heading", { name: "Custom Requests", exact: true })
   ).toHaveCount(0)
   await expect(
-    page.locator("summary").filter({ hasText: "Saved sources" }),
+    page.locator("summary").filter({ hasText: "Saved sources" })
   ).toHaveCount(0)
   await expect(
-    page.getByRole("button", { name: /^Custom Requests Record type/ }),
+    page.getByRole("button", { name: /^Custom Requests Record type/ })
   ).toBeVisible()
   expect(
-    calls.filter((c) => c.action === "sources").map((c) => c.company),
+    calls.filter((c) => c.action === "sources").map((c) => c.company)
   ).toContain("Company B")
 })
 
@@ -514,7 +513,7 @@ test("hash navigation opens the Explorer while a previous workspace read is pend
       .catch(() => {})
   })
   const pending = page.waitForRequest(
-    (r) => new URL(r.url()).pathname === "/api/workspace/modules/customers",
+    (r) => new URL(r.url()).pathname === "/api/workspace/modules/customers"
   )
   await page.goto("/workspace")
   await pending
@@ -525,13 +524,13 @@ test("hash navigation opens the Explorer while a previous workspace read is pend
     page.getByRole("heading", {
       name: "Report and record explorer",
       exact: true,
-    }),
+    })
   ).toBeVisible()
   await expect(
-    page.getByRole("button", { name: /^Custom Requests Record type/ }),
+    page.getByRole("button", { name: /^Custom Requests Record type/ })
   ).toBeVisible()
   await page.waitForTimeout(1200)
   await expect(
-    page.getByText("Late workspace error", { exact: true }),
+    page.getByText("Late workspace error", { exact: true })
   ).toHaveCount(0)
 })

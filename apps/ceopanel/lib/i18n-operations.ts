@@ -1,9 +1,31 @@
 export const arabicOperations: Record<string, string> = {
+  "All Companies": "جميع الشركات",
+  "Advanced filters": "تصفية متقدمة",
+  "Search by name…": "ابحث بالاسم…",
+  "Choose report": "اختر تقريراً",
+  "ERP sources": "مصادر ERP",
+  "Choose a record type or report to get started.":
+    "اختر نوع مستند أو تقريراً للبدء.",
+  "The connection to ERPNext was interrupted. Try again shortly.":
+    "انقطع الاتصال بنظام ERPNext. أعد المحاولة بعد قليل.",
+  "ERPNext did not respond in time. Try again shortly.":
+    "لم يستجب ERPNext في الوقت المحدد. أعد المحاولة بعد قليل.",
+  "ERP report timed out. Narrow the filters and try again.":
+    "استغرق تقرير ERP وقتاً طويلاً. حدد نطاقاً أضيق وأعد المحاولة.",
+  "ERPNext rejected this request. Check the source fields and required report filters.":
+    "رفض ERPNext هذا الطلب. تحقق من الحقول وتصفية التقرير المطلوبة.",
+  "ERPNext is temporarily unavailable. Try again shortly.":
+    "نظام ERPNext غير متاح مؤقتاً. أعد المحاولة بعد قليل.",
+  "ERPNext is limiting requests. Wait briefly and try again.":
+    "وصلت الطلبات إلى الحد المسموح في ERPNext. انتظر قليلاً وأعد المحاولة.",
+  "Sign in on Frappe": "تسجيل الدخول عبر Frappe",
   "No access": "لا توجد صلاحية وصول",
-  "Your Frappe permissions do not allow this dashboard. Choose an available dashboard or ask your ERP administrator.": "صلاحيات حسابك في Frappe لا تسمح بعرض هذه اللوحة. اختر لوحة متاحة أو تواصل مع مسؤول ERP.",
+  "Your Frappe permissions do not allow this dashboard. Choose an available dashboard or ask your ERP administrator.":
+    "صلاحيات حسابك في Frappe لا تسمح بعرض هذه اللوحة. اختر لوحة متاحة أو تواصل مع مسؤول ERP.",
   "Chart series": "سلاسل الرسم البياني",
   "Warehouse Stock": "مخزون المستودعات",
-  "Current nonzero on-hand balances by item and company warehouse.": "الأرصدة الحالية غير الصفرية حسب الصنف ومستودع الشركة.",
+  "Current nonzero on-hand balances by item and company warehouse.":
+    "الأرصدة الحالية غير الصفرية حسب الصنف ومستودع الشركة.",
   "On-hand stock value": "قيمة المخزون الفعلي",
   "Item-warehouse balances": "أرصدة الأصناف والمستودعات",
   "Negative stock balances": "أرصدة المخزون السالبة",
@@ -11,11 +33,12 @@ export const arabicOperations: Record<string, string> = {
   "Balances by warehouse": "الأرصدة حسب المستودع",
   "Stock UOM": "وحدة قياس المخزون",
   "On hand": "المتوفر فعلياً",
-  "Reserved": "المحجوز",
-  "Projected": "المتوقع",
+  Reserved: "المحجوز",
+  Projected: "المتوقع",
   "Stock value": "قيمة المخزون",
   "Negative stock": "مخزون سالب",
-  "Current nonzero on-hand Bin balances in readable warehouses of the selected company, including disabled warehouses. Zero on-hand balances are excluded, even if reservations remain. Quantities use each item's stock UOM and are not summed across items. Reserved and projected quantities are ERP values, not available-to-promise guarantees. Valuation is in company currency and is not a historical stock report.": "أرصدة المخزون الفعلي غير الصفرية في المستودعات المتاحة للشركة المحددة، بما فيها المستودعات المعطلة. لا تشمل الأرصدة الصفرية حتى عند وجود حجوزات. تعرض الكميات بوحدة قياس كل صنف ولا تجمع بين الأصناف. الكميات المحجوزة والمتوقعة مسجلة في ERP ولا تضمن إمكانية التسليم. القيمة بعملة الشركة ولا تمثل تقرير مخزون تاريخياً.",
+  "Current nonzero on-hand Bin balances in readable warehouses of the selected company, including disabled warehouses. Zero on-hand balances are excluded, even if reservations remain. Quantities use each item's stock UOM and are not summed across items. Reserved and projected quantities are ERP values, not available-to-promise guarantees. Valuation is in company currency and is not a historical stock report.":
+    "أرصدة المخزون الفعلي غير الصفرية في المستودعات المتاحة للشركة المحددة، بما فيها المستودعات المعطلة. لا تشمل الأرصدة الصفرية حتى عند وجود حجوزات. تعرض الكميات بوحدة قياس كل صنف ولا تجمع بين الأصناف. الكميات المحجوزة والمتوقعة مسجلة في ERP ولا تضمن إمكانية التسليم. القيمة بعملة الشركة ولا تمثل تقرير مخزون تاريخياً.",
   "Facilities & Renewals": "المرافق والتجديدات",
   "IT Service": "خدمات تقنية المعلومات",
   "Factory Operations": "عمليات المصنع",

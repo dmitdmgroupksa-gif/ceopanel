@@ -6,6 +6,7 @@ import {
   registerClient,
   revokeOwnedGrant,
   revokeToken,
+  ownedGrants,
 } from "@/lib/mcp/oauth"
 import {
   boundedText,
@@ -16,8 +17,6 @@ import {
   preflight,
 } from "@/lib/mcp/http"
 import { ERPNextError } from "@/lib/erpnext-client"
-import { identity } from "@/lib/platform/auth"
-import { database } from "@/lib/platform/db"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 type Context = { params: Promise<{ action: string }> }
@@ -35,14 +34,8 @@ export async function GET(request: Request, { params }: Context) {
         { headers: noStore },
       )
     if (action === "grants") {
-      const context = await identity(query.get("company") || undefined)
       return Response.json(
-        (
-          await database().query(
-            "SELECT g.id,c.name AS client,g.agent,g.scopes,g.expires_at,g.revoked_at,g.created_at FROM mcp_grants g JOIN mcp_clients c ON c.id=g.client_id WHERE g.owner=$1 AND g.company=$2 ORDER BY g.created_at DESC LIMIT 100",
-            [context.user, context.company],
-          )
-        ).rows,
+        await ownedGrants(query.get("company") || undefined),
         { headers: noStore },
       )
     }

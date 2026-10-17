@@ -25,6 +25,7 @@ import { useTheme } from "next-themes"
 import { LanguageSwitch, useLocale } from "./locale-provider"
 import { useSession } from "./session-provider"
 import { Button } from "./ui/button"
+import { companyLabel as displayCompany } from "@/lib/company-scope"
 
 const links = [
   { href: "/", label: "Dashboards", Icon: LayoutDashboard },
@@ -72,7 +73,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
   const path = usePathname()
   const { context, signOut, preview, previewCompany } = useSession()
   const accountLabel = preview ? t("Local preview") : context?.user
-  const companyLabel = context?.company || previewCompany
+  const companyLabel = t(displayCompany(context?.company || previewCompany))
   const exitLabel = t(preview ? "Back to sign in" : "Sign out")
   const [collapsed, setCollapsed] = useState(false)
   const [mobile, setMobile] = useState(false)
@@ -85,7 +86,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
     setMounted(true)
     try {
       setCollapsed(
-        localStorage.getItem("ceopanel_sidebar_collapsed") === "true",
+        localStorage.getItem("ceopanel_sidebar_collapsed") === "true"
       )
     } catch {}
   }, [])
@@ -319,7 +320,7 @@ export function PlatformLinks({ compact = false }: { compact?: boolean }) {
     <div className="flex h-12 items-center gap-3 px-4 lg:hidden">
       {trigger}
       <span className="truncate text-sm font-medium">
-        {context?.company || previewCompany}
+        {t(displayCompany(context?.company || previewCompany))}
       </span>
     </div>
   )

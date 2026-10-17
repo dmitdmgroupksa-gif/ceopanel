@@ -18,27 +18,31 @@ export class ERPNextClient {
   constructor(
     private siteUrl: string,
     private sid: string,
-    private fetcher: typeof fetch = fetch,
+    private fetcher: typeof fetch = fetch
   ) {}
 
   async request(
     path: string,
-    options?: { method: "POST"; body: unknown; csrf?: string },
+    options?: { method: "POST"; body: unknown; csrf?: string }
   ) {
     if (path.length > 7000)
       throw new ERPNextError(
         "ERP query is too long. Use fewer fields or shorter filters.",
-        400,
+        400
       )
     if (options) {
       const operation = path.match(
-        /^\/api\/method\/ceopanel_bridge\.api\.([a-z_]+)$/,
+        /^\/api\/method\/ceopanel_bridge\.api\.([a-z_]+)$/
       )?.[1]
       if (!operation || !READ_BRIDGE_OPERATIONS.has(operation)) denyERPWrite()
     }
     let response: Response
-    try {
-      response = await this.fetcher(`${this.siteUrl}${path}`, {
+    const reportRequest =
+      /^\/api\/method\/(frappe\.desk\.query_report\.run|frappe\.desk\.reportview\.get(?:_list)?)(?:\?|$)/.test(
+        path
+      )
+    const perform = () =>
+      this.fetcher(`${this.siteUrl}${path}`, {
         method: options?.method,
         body: options ? JSON.stringify(options.body) : undefined,
         headers: {
@@ -53,31 +57,73 @@ export class ERPNextClient {
         },
         cache: "no-store",
         redirect: "error",
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(reportRequest ? 60000 : 15000),
       })
-    } catch {
+    try {
+      try {
+        response = await perform()
+      } catch (error) {
+        const code = (error as { cause?: { code?: string } })?.cause?.code
+        if (
+          options ||
+          !["ECONNRESET", "EPIPE", "EAI_AGAIN", "UND_ERR_SOCKET"].includes(
+            code || ""
+          )
+        )
+          throw error
+        // Retry one interrupted GET connection, never permission failures,
+        // timed-out expensive queries or any POST operation.
+        response = await perform()
+      }
+    } catch (error) {
+      if (["TimeoutError", "AbortError"].includes((error as Error)?.name))
+        throw new ERPNextError(
+          reportRequest
+            ? "ERP report timed out. Narrow the filters and try again."
+            : "ERPNext did not respond in time. Try again shortly.",
+          504
+        )
       throw new ERPNextError(
-        "ERPNext could not be reached. Please try refreshing.",
+        "The connection to ERPNext was interrupted. Try again shortly.",
+        502
       )
     }
+    // Error bodies are intentionally not exposed. Release their streams so
+    // repeated denied metadata reads cannot strand upstream connections.
+    if (!response.ok) await response.body?.cancel().catch(() => {})
+    if (response.status === 429)
+      throw new ERPNextError(
+        "ERPNext is limiting requests. Wait briefly and try again.",
+        429
+      )
+    if ([400, 417, 422].includes(response.status))
+      throw new ERPNextError(
+        "ERPNext rejected this request. Check the source fields and required report filters.",
+        400
+      )
+    if ([502, 503, 504].includes(response.status))
+      throw new ERPNextError(
+        "ERPNext is temporarily unavailable. Try again shortly.",
+        response.status
+      )
     if (response.status === 401)
       throw new ERPNextError(
         "Your ERPNext session expired. Please sign in again.",
-        401,
+        401
       )
     if (response.status === 403)
       throw new ERPNextError(
         "Your ERPNext account does not have permission to read these records.",
-        403,
+        403
       )
     if (response.status === 404)
       throw new ERPNextError(
         "This module is unavailable on your ERPNext site.",
-        404,
+        404
       )
     if (!response.ok)
       throw new ERPNextError(
-        "ERPNext could not load these records. Please try refreshing.",
+        "ERPNext could not load these records. Please try refreshing."
       )
     try {
       return JSON.parse(
@@ -85,9 +131,9 @@ export class ERPNextClient {
           await requestBody(
             response,
             16 * 1024 * 1024,
-            "ERP response exceeds 16 MB. Narrow the request.",
+            "ERP response exceeds 16 MB. Narrow the request."
           )
-        ).toString("utf8"),
+        ).toString("utf8")
       )
     } catch (cause) {
       if (cause instanceof ERPNextError) throw cause
@@ -104,7 +150,7 @@ export class ERPNextClient {
       throw new ERPNextError("ERP session verification failed.", 401)
     const body = await this.request(
       `/api/method/ceopanel_bridge.api.${operation}`,
-      { method: "POST", body: args, csrf: token.message },
+      { method: "POST", body: args, csrf: token.message }
     )
     if (body.message === undefined)
       throw new ERPNextError("ERP bridge returned an invalid response.")
@@ -121,7 +167,7 @@ export class ERPNextClient {
       if (cause instanceof ERPNextError && cause.status === 403)
         throw new ERPNextError(
           "Your ERPNext session expired. Please sign in again.",
-          401,
+          401
         )
       throw cause
     }
@@ -135,6 +181,11 @@ export class ERPNextClient {
     const params = new URLSearchParams({ doctype: "User", name: user })
     const body = await this.request(`/api/method/frappe.client.get?${params}`)
     const doc = body.message
+    if (doc?.enabled === 0 || doc?.enabled === false)
+      throw new ERPNextError(
+        "Your ERPNext account is disabled. Sign in again.",
+        401
+      )
     if (
       doc?.name !== user ||
       !Array.isArray(doc.roles) ||
@@ -164,15 +215,17 @@ export class ERPNextClient {
     } catch {
       throw new ERPNextError("ERP could not generate or download this file.")
     }
-    if (!response.ok)
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
       throw new ERPNextError(
         "ERP file access or generation failed.",
-        [401, 403, 404].includes(response.status) ? response.status : 502,
+        [401, 403, 404].includes(response.status) ? response.status : 502
       )
+    }
     return requestBody(
       response,
       limit,
-      "ERP file exceeds the 6 MB delivery limit.",
+      "ERP file exceeds the 6 MB delivery limit."
     )
   }
 
@@ -183,7 +236,7 @@ export class ERPNextClient {
       perm_type: "read",
     })
     const body = await this.request(
-      `/api/method/frappe.client.has_permission?${params}`,
+      `/api/method/frappe.client.has_permission?${params}`
     )
     if (typeof body.message?.has_permission !== "boolean")
       throw new ERPNextError("ERPNext returned invalid permissions.")
@@ -192,7 +245,7 @@ export class ERPNextClient {
 
   async page<T = ERPDocument>(
     doctype: string,
-    query: Query & { offset: number; limit: number },
+    query: Query & { offset: number; limit: number }
   ): Promise<T[]> {
     if (
       !Number.isSafeInteger(query.offset) ||
@@ -211,13 +264,13 @@ export class ERPNextClient {
       limit_page_length: String(query.limit),
     })
     const body = await this.request(
-      `/api/resource/${encodeURIComponent(doctype)}?${params}`,
+      `/api/resource/${encodeURIComponent(doctype)}?${params}`
     )
     if (
       !Array.isArray(body.data) ||
       body.data.length > query.limit ||
       body.data.some(
-        (row: unknown) => !row || typeof row !== "object" || Array.isArray(row),
+        (row: unknown) => !row || typeof row !== "object" || Array.isArray(row)
       )
     )
       throw new ERPNextError("ERPNext returned an invalid record list.")
@@ -237,7 +290,7 @@ export class ERPNextClient {
       })
       if (all.length + rows.length > maxRecords) {
         throw new ERPNextError(
-          "More than 10,000 records match this view. Choose a shorter period or use an ERPNext report. Totals are unavailable.",
+          "More than 10,000 records match this view. Choose a shorter period or use an ERPNext report. Totals are unavailable."
         )
       }
       if (query.fields.includes("name"))
@@ -246,7 +299,7 @@ export class ERPNextClient {
           if (typeof name !== "string" || !name || names.has(name))
             throw new ERPNextError(
               "ERPNext returned missing or duplicate record identities. Refresh this view.",
-              409,
+              409
             )
           names.add(name)
         }
@@ -254,7 +307,7 @@ export class ERPNextClient {
       if (rows.length < pageSize) return all
     }
     throw new ERPNextError(
-      "ERPNext pagination did not finish. Totals are unavailable.",
+      "ERPNext pagination did not finish. Totals are unavailable."
     )
   }
 }

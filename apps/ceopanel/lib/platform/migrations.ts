@@ -5,4 +5,5 @@ export const migrations = [
   { version: "003", file: "003-field-inputs.sql" },
   { version: "004", file: "004-mcp.sql" },
   { version: "005", file: "005-query-indexes.sql" },
+  { version: "006", file: "006-frappe-oauth.sql" },
 ] as const

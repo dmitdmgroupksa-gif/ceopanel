@@ -12,17 +12,21 @@ import {
 } from "./ui/table"
 import { useLocale } from "./locale-provider"
 import type { NativeField } from "@/lib/erp-native/explorer-types"
+import { ALL_COMPANIES } from "@/lib/company-scope"
+import type { Company } from "@/lib/model"
 
 export function NativeValueInput({
   field,
   value,
   onChange,
   disabled = false,
+  companies,
 }: {
   field: NativeField
   value: unknown
   onChange: (value: unknown) => void
   disabled?: boolean
+  companies?: Company[]
 }) {
   const { t } = useLocale()
   const instance = useId()
@@ -43,7 +47,27 @@ export function NativeValueInput({
         {t(field.label || field.fieldname)}
         {field.required ? " *" : ""}
       </span>
-      {field.fieldtype === "Check" ? (
+      {field.options === "Company" &&
+      field.fieldtype === "Link" &&
+      companies ? (
+        <select
+          {...accessible}
+          id={id}
+          className="h-9 w-full rounded-md border bg-background px-3"
+          disabled={disabled}
+          required={field.required}
+          value={String(value ?? "")}
+          onChange={(e) => onChange(e.target.value || undefined)}
+        >
+          <option value="">{t("Choose")}</option>
+          <option value={ALL_COMPANIES}>{t("All Companies")}</option>
+          {companies.map((c) => (
+            <option key={c.name} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      ) : field.fieldtype === "Check" ? (
         <select
           {...accessible}
           id={id}
@@ -107,7 +131,7 @@ export function NativeValueInput({
             field.fieldtype === "Date"
               ? "date"
               : ["Int", "Float", "Currency", "Percent"].includes(
-                    field.fieldtype,
+                    field.fieldtype
                   )
                 ? "number"
                 : "text"
@@ -119,10 +143,10 @@ export function NativeValueInput({
               e.target.value === ""
                 ? undefined
                 : ["Int", "Float", "Currency", "Percent"].includes(
-                      field.fieldtype,
+                      field.fieldtype
                     )
                   ? Number(e.target.value)
-                  : e.target.value,
+                  : e.target.value
             )
           }
         />

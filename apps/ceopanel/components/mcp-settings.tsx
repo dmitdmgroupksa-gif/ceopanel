@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { Copy, RefreshCw } from "lucide-react"
 import type { MCPConnectionSettings } from "@/lib/mcp/settings"
+import { companyLabel } from "@/lib/company-scope"
 import { Button } from "./ui/button"
 import {
   Card,
@@ -17,11 +18,18 @@ type Grant = {
   id: string
   client: string
   agent: string
+  company: string
   scopes: string[]
   expires_at: string
   revoked_at: string | null
 }
-export function MCPSettings({ company, user }: { company: string; user: string }) {
+export function MCPSettings({
+  company,
+  user,
+}: {
+  company: string
+  user: string
+}) {
   const { locale } = useLocale(),
     ar = locale === "ar"
   const [grants, setGrants] = useState<Grant[]>([]),
@@ -40,29 +48,39 @@ export function MCPSettings({ company, user }: { company: string; user: string }
       if (!company) return
       setLoading(true)
       try {
-        const configuration = await fetch(`/api/platform/mcp-settings?${new URLSearchParams({ company })}`, { signal, cache: "no-store" })
+        const configuration = await fetch(
+          `/api/platform/mcp-settings?${new URLSearchParams({ company })}`,
+          { signal, cache: "no-store" }
+        )
         const connection = await configuration.json()
         if (signal?.aborted || request !== pendingLoad.current) return
-        if (!configuration.ok) throw new Error(connection.error || "MCP settings could not be loaded.")
+        if (!configuration.ok)
+          throw new Error(
+            connection.error || "MCP settings could not be loaded."
+          )
         if (connection.user !== user || connection.company !== company)
           throw new Error("MCP identity does not match the signed-in account.")
         setSettings(connection)
         if (!connection.ready) return
         const response = await fetch(
           `/api/mcp/oauth/grants?${new URLSearchParams({ company })}`,
-          { signal, cache: "no-store" },
+          { signal, cache: "no-store" }
         )
         const data = await response.json()
-        if (!response.ok) throw new Error(data.error_description || "MCP connections could not be loaded.")
+        if (!response.ok)
+          throw new Error(
+            data.error_description || "MCP connections could not be loaded."
+          )
         if (!signal?.aborted && request === pendingLoad.current) setGrants(data)
       } catch (e) {
         if (!signal?.aborted && request === pendingLoad.current)
           setMessage(e instanceof Error ? e.message : "MCP unavailable.")
       } finally {
-        if (!signal?.aborted && request === pendingLoad.current) setLoading(false)
+        if (!signal?.aborted && request === pendingLoad.current)
+          setLoading(false)
       }
     },
-    [company, user],
+    [company, user]
   )
   useEffect(() => {
     const controller = new AbortController()
@@ -101,7 +119,11 @@ export function MCPSettings({ company, user }: { company: string; user: string }
       await navigator.clipboard.writeText(settings.endpoint)
       setMessage(ar ? "تم نسخ رابط الخادم." : "Server URL copied.")
     } catch {
-      setMessage(ar ? "حدد رابط الخادم وانسخه يدوياً." : "Select the server URL and copy it manually.")
+      setMessage(
+        ar
+          ? "حدد رابط الخادم وانسخه يدوياً."
+          : "Select the server URL and copy it manually."
+      )
     }
   }
   return (
@@ -116,22 +138,87 @@ export function MCPSettings({ company, user }: { company: string; user: string }
       </CardHeader>
       <CardContent className="space-y-4">
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <div><dt className="text-muted-foreground">{ar ? "حساب ERP" : "ERP account"}</dt><dd className="break-all" dir="auto">{user}</dd></div>
-          <div><dt className="text-muted-foreground">{ar ? "الشركة المحددة" : "Selected company"}</dt><dd dir="auto">{company}</dd></div>
+          <div>
+            <dt className="text-muted-foreground">
+              {ar ? "حساب ERP" : "ERP account"}
+            </dt>
+            <dd className="break-all" dir="auto">
+              {user}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">
+              {ar ? "الشركة المحددة" : "Selected company"}
+            </dt>
+            <dd dir="auto">
+              {ar && companyLabel(company) === "All Companies"
+                ? "جميع الشركات"
+                : companyLabel(company)}
+            </dd>
+          </div>
         </dl>
-        {settings?.endpoint && <div className="flex flex-wrap gap-2">
-          <input aria-label={ar ? "رابط خادم MCP" : "MCP server URL"} readOnly value={settings.endpoint} onFocus={(e) => e.target.select()} className="min-w-0 flex-1 rounded-md border bg-muted px-3 py-2 text-sm" dir="ltr" />
-          <Button variant="outline" size="sm" onClick={() => void copyEndpoint()}><Copy />{ar ? "نسخ الرابط" : "Copy URL"}</Button>
-        </div>}
-        {settings?.ready && <div className="space-y-2 text-sm">
-          <p>{ar ? "أضف هذا الرابط إلى تطبيق MCP الخارجي واختر OAuth. سجل الدخول بحساب ERP الخاص بك ووافق على صلاحية القراءة." : "Add this URL in your external MCP client and choose OAuth. Sign in with your own ERP account and approve read access."}</p>
-          <p className="text-muted-foreground">{ar ? "يتاح لك فقط ما تسمح به صلاحياتك في Frappe، بما فيه الأنواع والتقارير المخصصة. إنشاء وتعديل واعتماد المستندات معطل." : "You can read only what your Frappe permissions allow, including custom DocTypes and reports. Creating, editing and submitting ERP records is disabled."}</p>
-          <p className="text-xs text-muted-foreground" dir="ltr">OAuth · {settings.scopes.join(" ")}</p>
-          <Link href="/workspace#explorer" className="underline underline-offset-4">{ar ? "استعراض مصادر ERP المتاحة لك" : "Browse your ERP sources"}</Link>
-        </div>}
-        {settings?.reason && <p role="status" className="text-sm text-muted-foreground">{settings.reason}</p>}
-        <Button variant="outline" size="sm" disabled={loading || busy || !company} onClick={() => void load()}><RefreshCw />{ar ? "تحديث الاتصالات" : "Refresh connections"}</Button>
-        {loading && <p role="status" className="text-sm text-muted-foreground">{ar ? "جارٍ تحميل الاتصالات…" : "Loading connections…"}</p>}
+        {settings?.endpoint && (
+          <div className="flex flex-wrap gap-2">
+            <input
+              aria-label={ar ? "رابط خادم MCP" : "MCP server URL"}
+              readOnly
+              value={settings.endpoint}
+              onFocus={(e) => e.target.select()}
+              className="min-w-0 flex-1 rounded-md border bg-muted px-3 py-2 text-sm"
+              dir="ltr"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void copyEndpoint()}
+            >
+              <Copy />
+              {ar ? "نسخ الرابط" : "Copy URL"}
+            </Button>
+          </div>
+        )}
+        {settings?.ready && (
+          <div className="space-y-2 text-sm">
+            <p>
+              {ar
+                ? "أضف هذا الرابط إلى تطبيق MCP الخارجي واختر OAuth. سجل الدخول بحساب ERP الخاص بك ووافق على صلاحية القراءة."
+                : "Add this URL in your external MCP client and choose OAuth. Sign in with your own ERP account and approve read access."}
+            </p>
+            <p className="text-muted-foreground">
+              {ar
+                ? "يتاح لك فقط ما تسمح به صلاحياتك في Frappe، بما فيه الأنواع والتقارير المخصصة. إنشاء وتعديل واعتماد المستندات معطل."
+                : "You can read only what your Frappe permissions allow, including custom DocTypes and reports. Creating, editing and submitting ERP records is disabled."}
+            </p>
+            <p className="text-xs text-muted-foreground" dir="ltr">
+              OAuth · {settings.scopes.join(" ")}
+            </p>
+            <Link
+              href="/workspace#explorer"
+              className="underline underline-offset-4"
+            >
+              {ar ? "استعراض مصادر ERP المتاحة لك" : "Browse your ERP sources"}
+            </Link>
+          </div>
+        )}
+        {settings?.reason && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {settings.reason}
+          </p>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={loading || busy || !company}
+          onClick={() => void load()}
+        >
+          <RefreshCw />
+          {ar ? "تحديث الاتصالات" : "Refresh connections"}
+        </Button>
+        {loading && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {ar ? "جارٍ تحميل الاتصالات…" : "Loading connections…"}
+          </p>
+        )}
         {message && (
           <p role="status" className="text-sm text-muted-foreground">
             {message}
@@ -150,6 +237,9 @@ export function MCPSettings({ company, user }: { company: string; user: string }
             <div>
               <p className="font-medium">
                 {g.client} · {g.agent}
+              </p>
+              <p className="text-muted-foreground" dir="auto">
+                {companyLabel(g.company)}
               </p>
               <p className="text-muted-foreground">
                 {g.revoked_at

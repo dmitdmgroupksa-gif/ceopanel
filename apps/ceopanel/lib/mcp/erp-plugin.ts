@@ -18,6 +18,7 @@ const id = z
   )
 const offset = z.number().int().min(0).max(100000).default(0)
 const titles: Record<string, string> = {
+  erp_list_companies: "List my accessible ERP companies",
   erp_search_sources: "Find ERP reports and record types",
   erp_describe_doctype: "Inspect ERP record fields",
   erp_search_records: "Search ERP records",
@@ -106,8 +107,21 @@ export const erpReadPlugin: BusinessPlugin = {
   version: "1.0.0",
   tools: [
     tool(
+      "erp_list_companies",
+      "List the companies currently accessible to this authenticated Frappe user, including currencies and the default company context. Call this before selecting company filters; permissions are refreshed on every MCP request. Never assume the user has only one company.",
+      z.object({}).strict(),
+      async (s) => ({
+        companies: s.context.companies.map((c) => ({
+          name: c.name,
+          currency: c.default_currency,
+        })),
+        selectedCompany: s.context.company,
+        scope: "Current authenticated Frappe user's permitted companies",
+      }),
+    ),
+    tool(
       "erp_search_sources",
-      "Find enabled ERP reports and standard/custom business DocTypes by words in their name or module. Start here for unknown/custom sources. Results are metadata candidates, not a permission guarantee. Follow nextOffset when hasMore is true; try synonyms or individual words if no match.",
+      "Find enabled ERP reports and standard/custom business DocTypes by words in their name or module. Start here for unknown/custom sources; a name ending in Report may be a saved report, not a DocType. Search kind=all when unsure. Results are metadata candidates, not a permission guarantee. Follow nextOffset when hasMore is true; try synonyms or individual words if no match.",
       z
         .object({
           query: z.string().max(200),

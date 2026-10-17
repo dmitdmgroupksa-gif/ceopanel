@@ -1,6 +1,7 @@
 import "server-only"
 import { ERPNextError, type Filter } from "../erpnext-client"
 import { client } from "../erpnext-server"
+import { isAllCompanies, scopedCompanies } from "../company-scope"
 import type { DashboardContext } from "../dashboard-server"
 import type { WorkspaceAdapter } from "../workspace-server"
 import type {
@@ -18,7 +19,7 @@ import {
 function projection(
   mapping: NativeModule,
   row: Record<string, unknown>,
-  fields: Field[],
+  fields: Field[]
 ): WorkspaceRecord {
   if (typeof row.name !== "string" || typeof row.modified !== "string")
     throw new ERPNextError("ERPNext returned an invalid record.")
@@ -49,7 +50,7 @@ function projection(
 }
 
 export function nativeWorkspace(
-  reader: () => Promise<NativeReadClient> = client,
+  reader: () => Promise<NativeReadClient> = client
 ): Record<string, WorkspaceAdapter> {
   return Object.fromEntries(
     nativeModules.map((mapping) => {
@@ -59,12 +60,12 @@ export function nativeWorkspace(
         const allowed = new Set(
           metadata.fields
             .filter((f) => !f.fieldtype.startsWith("Table"))
-            .map((f) => f.fieldname),
+            .map((f) => f.fieldname)
         )
         if (mapping.scope === "company" && !allowed.has("company"))
           throw new ERPNextError(
             "The Company field is missing or restricted.",
-            403,
+            403
           )
         return {
           erp,
@@ -72,7 +73,17 @@ export function nativeWorkspace(
         }
       }
       const filters = (context: DashboardContext): Filter[] =>
-        mapping.scope === "company" ? [["company", "=", context.company]] : []
+        mapping.scope === "company"
+          ? [
+              [
+                "company",
+                isAllCompanies(context.company) ? "in" : "=",
+                isAllCompanies(context.company)
+                  ? scopedCompanies(context)
+                  : context.company,
+              ],
+            ]
+          : []
       async function page(
         context: DashboardContext,
         query: {
@@ -80,7 +91,7 @@ export function nativeWorkspace(
           offset: number
           limit: number
           name?: string
-        },
+        }
       ) {
         const { erp, fields: visibleFields } = await view(context)
         const fields = [
@@ -111,7 +122,7 @@ export function nativeWorkspace(
           orderBy: "modified desc, name asc",
         })
         const projected = rows.map((row) =>
-          projection(mapping, row, visibleFields),
+          projection(mapping, row, visibleFields)
         )
         if (
           new Set(projected.map((row) => row.name)).size !== projected.length ||
@@ -119,15 +130,18 @@ export function nativeWorkspace(
         )
           throw new ERPNextError(
             "ERPNext returned duplicate or mismatched record identities.",
-            409,
+            409
           )
         if (
           mapping.scope === "company" &&
-          projected.some((row) => row.values.company !== context.company)
+          projected.some(
+            (row) =>
+              !scopedCompanies(context).includes(String(row.values.company))
+          )
         )
           throw new ERPNextError(
             "ERPNext returned records for a different company.",
-            403,
+            403
           )
         return projected
       }
@@ -149,7 +163,18 @@ export function nativeWorkspace(
             fields,
             columns: [
               { key: "name", label: "Record" },
+              ...(isAllCompanies(context.company) && mapping.scope === "company"
+                ? [{ key: "company", label: "Company" }]
+                : []),
               ...fields
+                .filter(
+                  (field) =>
+                    !(
+                      isAllCompanies(context.company) &&
+                      mapping.scope === "company" &&
+                      field.name === "company"
+                    )
+                )
                 .slice(0, 6)
                 .map((field) => ({ key: field.name, label: field.label })),
             ],
@@ -179,12 +204,12 @@ export function nativeWorkspace(
           if (!rows[0])
             throw new ERPNextError(
               "Record not found or unavailable to your account.",
-              404,
+              404
             )
           return rows[0]
         },
       }
       return [mapping.module.id, adapter]
-    }),
+    })
   )
 }

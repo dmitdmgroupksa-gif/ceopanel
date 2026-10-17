@@ -4,6 +4,7 @@ vi.mock("../erpnext-server", () => ({ client: vi.fn() }))
 import { nativeWorkspace } from "./workspace"
 import { nativeModules } from "./catalog"
 import type { NativeReadClient } from "./permissioned-reader"
+import { ALL_COMPANIES } from "../company-scope"
 
 const context = {
   user: "user@example.com",
@@ -52,7 +53,7 @@ function setup(rows: Record<string, unknown>[] = [row], readable = true) {
       rows.map((row) => ({
         ...Object.fromEntries(query.fields.map((field) => [field, null])),
         ...row,
-      })),
+      }))
     ),
   }
   return {
@@ -62,6 +63,39 @@ function setup(rows: Record<string, unknown>[] = [row], readable = true) {
   }
 }
 describe("native record adapters", () => {
+  it("reads All Companies using the currently authorized company names and rejects out-of-scope rows", async () => {
+    const all = {
+      ...context,
+      company: ALL_COMPANIES,
+      companies: [
+        { name: "Company A", default_currency: "SAR" },
+        { name: "Company B", default_currency: "USD" },
+      ],
+    }
+    const { adapters, erp } = setup([
+      row,
+      { ...row, name: "ORDER-2", company: "Company B" },
+    ])
+    const data = await adapters["sales-orders"].list(all, {
+      search: "",
+      offset: 0,
+      limit: 20,
+    })
+    expect(data.records).toHaveLength(2)
+    expect((await adapters["sales-orders"].schema(all)).columns).toContainEqual(
+      { key: "company", label: "Company" }
+    )
+    expect(erp.page).toHaveBeenCalledWith(
+      "Sales Order",
+      expect.objectContaining({
+        filters: [["company", "in", ["Company A", "Company B"]]],
+      })
+    )
+    const denied = setup([{ ...row, company: "Company C" }])
+    await expect(
+      denied.adapters["sales-orders"].get(all, row.name)
+    ).rejects.toMatchObject({ status: 403 })
+  })
   it("provides no write implementation for any registered module", async () => {
     const { adapters } = setup()
     for (const mapping of nativeModules) {
@@ -102,13 +136,13 @@ describe("native record adapters", () => {
         limit: 2,
         filters: [["company", "=", "Company A"]],
         orFilters: expect.arrayContaining([["name", "like", "%100\\%\\_%"]]),
-      }),
+      })
     )
   })
   it("rejects cross-company responses, including a detail lookup", async () => {
     const { adapters } = setup([{ ...row, company: "Company B" }])
     await expect(
-      adapters["sales-orders"].get(context, "ORDER-1"),
+      adapters["sales-orders"].get(context, "ORDER-1")
     ).rejects.toMatchObject({ status: 403 })
   })
   it("does not invent a company field for shared masters", async () => {
@@ -121,13 +155,13 @@ describe("native record adapters", () => {
     await adapters.customers.list(context, { search: "", offset: 0, limit: 20 })
     expect(erp.page).toHaveBeenCalledWith(
       "Customer",
-      expect.objectContaining({ filters: [] }),
+      expect.objectContaining({ filters: [] })
     )
   })
   it("returns a scoped not-found result instead of fetching unrestricted documents", async () => {
     const { adapters, erp } = setup([])
     await expect(
-      adapters["sales-orders"].get(context, "UNKNOWN"),
+      adapters["sales-orders"].get(context, "UNKNOWN")
     ).rejects.toMatchObject({ status: 404 })
     expect(erp.page).toHaveBeenCalledWith(
       "Sales Order",
@@ -137,7 +171,7 @@ describe("native record adapters", () => {
           ["name", "=", "UNKNOWN"],
         ],
         limit: 1,
-      }),
+      })
     )
   })
   it("hides restricted columns from both schema and records even if ERP returns them", async () => {
@@ -156,7 +190,7 @@ describe("native record adapters", () => {
   it("rejects a mismatched detail identity and duplicate list rows", async () => {
     const { adapters } = setup([row])
     await expect(
-      adapters["sales-orders"].get(context, "ANOTHER"),
+      adapters["sales-orders"].get(context, "ANOTHER")
     ).rejects.toMatchObject({ status: 409 })
     const duplicate = setup([row, row])
     await expect(
@@ -164,7 +198,7 @@ describe("native record adapters", () => {
         search: "",
         offset: 0,
         limit: 20,
-      }),
+      })
     ).rejects.toMatchObject({ status: 409 })
   })
 })

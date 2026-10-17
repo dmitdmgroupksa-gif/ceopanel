@@ -27,7 +27,7 @@ The order follows the company screenshot. Expanded names were confirmed by the u
 
 Also connected: **Facilities & Renewals**, **IT Service** and **Factory Operations**.
 Approvals, Dispatch & Logistics and Tasks now use native read-only adapters.
-There are 16 connected views across 21 dashboard tabs. See
+There are 17 connected views across 21 dashboard tabs. See
 [ERP-DASHBOARDS.md](ERP-DASHBOARDS.md) for sources, scope and calculation rules.
 
 Unconnected dashboards show one concise empty state. Metrics, charts, record search, and exports appear when a mapped adapter returns data. Reporting-period and company filters remain available. **No sample financial values or assumed company calculations appear in these dashboards.**
@@ -91,7 +91,14 @@ Defaults are **Durar Masagh**, **https://dmgroup.frappe.cloud**, and **Asia/Riya
 
 Company pages require sign-in at `/login`. Native ERPNext sign-in sends credentials to the company site, verifies the returned SID, and stores it in an HttpOnly, SameSite cookie (Secure in production). Passwords are not saved or echoed in responses. Native Frappe v14 email, SMS, and authenticator challenges are supported; first-time authenticator enrollment follows the instructions emailed by ERPNext. `/api/erpnext/context` verifies identity and permitted companies before mounting company views. Native record and role permissions are enforced again by server APIs. Connecting ERPNext leaves unmapped dashboards in **Awaiting data** status.
 
-Sign-out revokes the current ERPNext SID and clears local credentials and company views. Other ERPNext sessions are unaffected. If ERPNext is unreachable, local logout succeeds and the login page explains that remote revocation remains incomplete. Session expiry redirects to sign-in with a validated local return path. Browser authentication tests use fixtures; controlled native API checks use local server credentials for reads only, without printing them or financial values. See [AUTH.md](AUTH.md) for behavior, validation, and the GitHub and animation references used. SSO-only identity providers require a separate integration.
+Sign-out revokes the current ERPNext session and clears local credentials and company views. Other ERPNext sessions are unaffected. If ERPNext is unreachable, local logout succeeds and the login page explains that remote revocation remains incomplete. Session expiry redirects to sign-in with a validated local return path. Browser authentication tests use fixtures; controlled native API checks use local server credentials for reads only, without printing them or financial values. See [AUTH.md](AUTH.md) for behavior, validation, and the GitHub and animation references used.
+
+Native Frappe authorization-code login is also supported for the panel and external
+MCP. Register a Frappe OAuth Client using [the setup guide](deploy/FRAPPE-OAUTH.md)
+to enable it. Personal tokens stay encrypted on the server. Each MCP request
+rechecks that user's identity, roles and accessible companies, and each data read
+uses native Frappe permissions. Integrations shows only the current user's MCP
+connections. Inaccessible dashboards are hidden and direct links show **No access**.
 
 ## Run and validate
 

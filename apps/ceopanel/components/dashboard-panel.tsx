@@ -99,8 +99,8 @@ export function DashboardPanel({
       data.table.columns.some((column) =>
         String(row[column.key] ?? "")
           .toLowerCase()
-          .includes(query),
-      ),
+          .includes(query)
+      )
     )
   }, [data.table.rows, data.table.columns, search])
   const totalPages = Math.max(1, Math.ceil(rows.length / 10))
@@ -117,9 +117,36 @@ export function DashboardPanel({
       ...(search.trim() ? [["Search", search.trim()]] : []),
       data.table.columns.map((column) => column.label),
       ...rows.map((row) =>
-        data.table.columns.map((column) => row[column.key] ?? ""),
+        data.table.columns.map((column) => row[column.key] ?? "")
       ),
     ])
+  if (data.companyResults)
+    return (
+      <div className="space-y-8">
+        {data.companyResults.map((result) => (
+          <section key={result.company} className="space-y-3">
+            <h2 className="text-lg font-semibold">
+              {data.scope === "erp-account"
+                ? t("ERP account scope")
+                : result.company}
+            </h2>
+            {result.error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {t(result.error)}
+              </p>
+            ) : (
+              result.data && (
+                <DashboardPanel
+                  definition={definition}
+                  data={result.data}
+                  siteUrl={siteUrl}
+                />
+              )
+            )}
+          </section>
+        ))}
+      </div>
+    )
   if (!ready && failed) return null
   if (!ready)
     return (
@@ -164,9 +191,23 @@ export function DashboardPanel({
           <CardTitle>{t(data.chart.title)}</CardTitle>
         </CardHeader>
         <CardContent>
-          {data.chart.series.length > 1 && <div aria-label={t("Chart series")} className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground">
-            {data.chart.series.map((series, index) => <span key={series.key} className="flex items-center gap-2"><span aria-hidden="true" className="size-2.5 rounded-full" style={{ backgroundColor: chartColor(index) }} />{t(series.label)}</span>)}
-          </div>}
+          {data.chart.series.length > 1 && (
+            <div
+              aria-label={t("Chart series")}
+              className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground"
+            >
+              {data.chart.series.map((series, index) => (
+                <span key={series.key} className="flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className="size-2.5 rounded-full"
+                    style={{ backgroundColor: chartColor(index) }}
+                  />
+                  {t(series.label)}
+                </span>
+              ))}
+            </div>
+          )}
           {ready && data.chart.points.length > 0 ? (
             <div className="h-64">
               <ResponsiveContainer
@@ -218,7 +259,13 @@ export function DashboardPanel({
                         radius={[0, 3, 3, 0]}
                         isAnimationActive={false}
                       >
-                        {data.chart.series.length === 1 && data.chart.points.map((point, i) => <Cell key={`${point.label}:${i}`} fill={chartColor(i)} />)}
+                        {data.chart.series.length === 1 &&
+                          data.chart.points.map((point, i) => (
+                            <Cell
+                              key={`${point.label}:${i}`}
+                              fill={chartColor(i)}
+                            />
+                          ))}
                       </Bar>
                     ))}
                   </BarChart>
@@ -313,7 +360,7 @@ export function DashboardPanel({
                           <a
                             href={recordHref(
                               data.table.links?.[row.id],
-                              siteUrl,
+                              siteUrl
                             )}
                             target="_blank"
                             rel="noopener noreferrer"

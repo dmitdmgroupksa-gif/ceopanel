@@ -1,4 +1,5 @@
 "use client"
+import { ALL_COMPANIES } from "@/lib/company-scope"
 import { sessionFetch as fetch } from "@/lib/session-fetch"
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
@@ -86,7 +87,7 @@ async function requestApi<T>(
   path: string,
   company?: string,
   body?: unknown,
-  signal?: AbortSignal,
+  signal?: AbortSignal
 ): Promise<T> {
   const response = await fetch(
     `/api/platform/${path}${company ? `?company=${encodeURIComponent(company)}` : ""}`,
@@ -104,12 +105,12 @@ async function requestApi<T>(
           : body
             ? JSON.stringify(body)
             : undefined,
-    },
+    }
   )
   const result = await response.json()
   if (!response.ok)
     throw new Error(
-      result.error || "The ERPNext operation could not be completed.",
+      result.error || "The ERPNext operation could not be completed."
     )
   return result
 }
@@ -149,7 +150,7 @@ export function ApprovalInbox({ company }: { company?: string }) {
   }, [refresh])
   async function decide(
     row: Proposal,
-    decision: "approve" | "reject" | "reconcile",
+    decision: "approve" | "reject" | "reconcile"
   ) {
     setBusy(row.id)
     setError("")
@@ -159,7 +160,7 @@ export function ApprovalInbox({ company }: { company?: string }) {
         company,
         decision === "reconcile"
           ? { id: row.id }
-          : { id: row.id, revision: row.revision, decision },
+          : { id: row.id, revision: row.revision, decision }
       )
       await refresh()
     } catch (e) {
@@ -173,7 +174,7 @@ export function ApprovalInbox({ company }: { company?: string }) {
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
           {t(
-            "Review the exact change and evidence before approving. Native ERP workflows still apply.",
+            "Review the exact change and evidence before approving. Native ERP workflows still apply."
           )}
         </p>
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
@@ -322,7 +323,7 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
     path: string,
     company?: string,
     body?: unknown,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<T> {
     const id = token.current
     const result = await requestApi<T>(path, company, body, signal)
@@ -342,8 +343,8 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
   const company = context?.company
   async function connect(company?: string) {
     const response = await fetch(
-      `/api/erpnext/context${company ? `?company=${encodeURIComponent(company)}` : ""}`,
-      { cache: "no-store" },
+      `/api/erpnext/context?${new URLSearchParams({ navigation: "0", ...(company ? { company } : {}) })}`,
+      { cache: "no-store" }
     )
     const body = await response.json()
     if (!response.ok) throw new Error(body.error)
@@ -448,6 +449,7 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
               className="h-9 rounded-md border bg-background px-3 text-sm"
               onChange={(e) => void perform(() => connect(e.target.value))}
             >
+              <option value={ALL_COMPANIES}>{t("All Companies")}</option>
               {context.companies.map((c) => (
                 <option key={c.name}>{c.name}</option>
               ))}
@@ -603,7 +605,7 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
                                 created_at: new Date().toISOString(),
                               },
                               ...rows,
-                            ].slice(0, 50),
+                            ].slice(0, 50)
                           )
                         }
                       })
@@ -771,8 +773,8 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
                       e.preventDefault()
                       void perform(async () =>
                         setResults(
-                          await api("knowledge/search", company, { query }),
-                        ),
+                          await api("knowledge/search", company, { query })
+                        )
                       )
                     }}
                   >
@@ -841,7 +843,7 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
                             ERP_READ_ONLY ||
                             busy ||
                             !collections.some(
-                              (c) => c.id === doc.collection && c.upload,
+                              (c) => c.id === doc.collection && c.upload
                             )
                           }
                           variant="outline"
@@ -911,7 +913,7 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
                     <Bell className="size-4" />
                     {(() => {
                       const agent = agents.find(
-                        (a) => n.title === `${a.name}: approval requested`,
+                        (a) => n.title === `${a.name}: approval requested`
                       )
                       return agent
                         ? `${locale === "ar" ? agent.ar : agent.name}: ${t("Approval requested")}`
@@ -945,61 +947,63 @@ export function PlatformPanel({ mode }: { mode: PlatformMode }) {
               user={context?.user || ""}
             />
             <InputReadiness key={`inputs:${company}`} company={company} />
-            {context?.roles?.includes("System Manager") && <>
-            <RolloutReadiness company={company} />
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  {t("ERP discovery")}
-                </CardTitle>
-                <CardDescription>
-                  {t(
-                    "System Manager access is required to discover ERP metadata.",
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Button
-                  disabled={!context || busy}
-                  variant="outline"
-                  onClick={() =>
-                    void perform(async () =>
-                      setInventory(await api("inventory", company)),
-                    )
-                  }
-                >
-                  {t("View discovery inventory")}
-                </Button>
-                {inventory != null && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      const url = URL.createObjectURL(
-                        new Blob([JSON.stringify(inventory, null, 2)], {
-                          type: "application/json",
-                        }),
-                      )
-                      const link = document.createElement("a")
-                      link.href = url
-                      link.download = "ceopanel-discovery.json"
-                      link.click()
-                      setTimeout(() => URL.revokeObjectURL(url), 1000)
-                    }}
-                  >
-                    {t("Download discovery inventory")}
-                  </Button>
-                )}
-                {inventory != null && (
-                  <pre
-                    dir="ltr"
-                    className="max-h-96 overflow-auto rounded border p-4 text-xs"
-                  >
-                    {JSON.stringify(inventory, null, 2)}
-                  </pre>
-                )}
-              </CardContent>
-            </Card>
-            </>}
+            {context?.roles?.includes("System Manager") && (
+              <>
+                <RolloutReadiness company={company} />
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      {t("ERP discovery")}
+                    </CardTitle>
+                    <CardDescription>
+                      {t(
+                        "System Manager access is required to discover ERP metadata."
+                      )}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Button
+                      disabled={!context || busy}
+                      variant="outline"
+                      onClick={() =>
+                        void perform(async () =>
+                          setInventory(await api("inventory", company))
+                        )
+                      }
+                    >
+                      {t("View discovery inventory")}
+                    </Button>
+                    {inventory != null && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const url = URL.createObjectURL(
+                            new Blob([JSON.stringify(inventory, null, 2)], {
+                              type: "application/json",
+                            })
+                          )
+                          const link = document.createElement("a")
+                          link.href = url
+                          link.download = "ceopanel-discovery.json"
+                          link.click()
+                          setTimeout(() => URL.revokeObjectURL(url), 1000)
+                        }}
+                      >
+                        {t("Download discovery inventory")}
+                      </Button>
+                    )}
+                    {inventory != null && (
+                      <pre
+                        dir="ltr"
+                        className="max-h-96 overflow-auto rounded border p-4 text-xs"
+                      >
+                        {JSON.stringify(inventory, null, 2)}
+                      </pre>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </>
         )}
       </main>

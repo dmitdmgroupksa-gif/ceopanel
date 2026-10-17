@@ -11,6 +11,7 @@ import { agents, type AgentId } from "../platform/catalog"
 import { SESSION_COOKIE } from "../erpnext-server"
 import { ERPNextError } from "../erpnext-client"
 import { withDelegatedERP } from "./erp-identity"
+import { isAllCompanies } from "../company-scope"
 import {
   digest,
   externalReady,
@@ -41,8 +42,7 @@ async function authorization(query: string) {
   if (
     !scopes.includes(readScope) ||
     scopes.some(
-      (s) =>
-        ![readScope, erpScope, proposalScope, "offline_access"].includes(s),
+      (s) => ![readScope, erpScope, proposalScope, "offline_access"].includes(s)
     )
   )
     throw new ERPNextError("Unsupported MCP scope.", 400)
@@ -71,30 +71,26 @@ export async function registerClient(raw: unknown) {
   if (input.redirect_uris.some((uri) => !redirectAllowed(uri)))
     throw new ERPNextError(
       "Register HTTPS or native loopback redirect URIs without credentials or fragments.",
-      400,
+      400
     )
   const id = randomUUID()
   await transaction(async (db) => {
     await db.query(
-      "SELECT pg_advisory_xact_lock(hashtext('mcp-client-registration'))",
+      "SELECT pg_advisory_xact_lock(hashtext('mcp-client-registration'))"
     )
     const count = (
       await db.query(
-        "SELECT count(*)::int AS n FROM mcp_clients WHERE created_at>now()-interval '1 hour'",
+        "SELECT count(*)::int AS n FROM mcp_clients WHERE created_at>now()-interval '1 hour'"
       )
     ).rows[0].n
     if (count >= 120)
       throw new ERPNextError(
         "Client registration limit reached. Try later.",
-        429,
+        429
       )
     await db.query(
       "INSERT INTO mcp_clients(id,name,redirect_uris) VALUES($1,$2,$3)",
-      [
-        id,
-        input.client_name,
-        JSON.stringify([...new Set(input.redirect_uris)]),
-      ],
+      [id, input.client_name, JSON.stringify([...new Set(input.redirect_uris)])]
     )
   })
   return {
@@ -134,7 +130,7 @@ export async function authorizeClient(
   company: string,
   agent: AgentId,
   allowProposals: boolean,
-  decision: "allow" | "deny",
+  decision: "allow" | "deny"
 ) {
   const { input, client, scopes: requested } = await authorization(query)
   const redirect = new URL(input.redirect_uri)
@@ -150,12 +146,12 @@ export async function authorizeClient(
   if (requested.includes(erpScope) && !nativeReadAccess(context))
     throw new ERPNextError(
       "ERP-wide reading is not enabled for your account.",
-      403,
+      403
     )
   const sid = (await cookies()).get(SESSION_COOKIE)?.value
   if (!sid) throw new ERPNextError("Sign in to ERPNext again.", 401)
   const scopes = requested.filter(
-      (s) => s !== proposalScope || (!ERP_READ_ONLY && allowProposals),
+      (s) => s !== proposalScope || (!ERP_READ_ONLY && allowProposals)
     ),
     grant = randomUUID()
   const claims = {
@@ -174,16 +170,16 @@ export async function authorizeClient(
       redirect: input.redirect_uri,
       challenge: input.code_challenge,
     },
-    120,
+    120
   )
   await transaction(async (db) => {
     await db.query(
       "INSERT INTO mcp_grants(id,client_id,owner,company,agent,scopes,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+interval '8 hours')",
-      [grant, client.id, context.user, context.company, agent, scopes],
+      [grant, client.id, context.user, context.company, agent, scopes]
     )
     await db.query(
       "INSERT INTO mcp_codes(hash,grant_id,expires_at) VALUES($1,$2,now()+interval '2 minutes')",
-      [digest(code), grant],
+      [digest(code), grant]
     )
     await db.query(
       "INSERT INTO audit_events(actor,company,event,target,details) VALUES($1,$2,'mcp.consent',$3,$4)",
@@ -192,7 +188,7 @@ export async function authorizeClient(
         context.company,
         grant,
         JSON.stringify({ client: client.id, agent, scopes }),
-      ],
+      ]
     )
   })
   redirect.searchParams.set("code", code)
@@ -222,7 +218,7 @@ async function validateGrant(claims: Record<string, any>) {
   const grant = (
     await database().query(
       "SELECT * FROM mcp_grants WHERE id=$1 AND revoked_at IS NULL AND expires_at>now()",
-      [parsed.grant],
+      [parsed.grant]
     )
   ).rows[0]
   if (
@@ -236,9 +232,20 @@ async function validateGrant(claims: Record<string, any>) {
     parsed.scopes.some((s) => !grant.scopes.includes(s))
   )
     throw new ERPNextError("MCP grant is invalid or revoked.", 401)
-  const context = await withDelegatedERP(parsed.sid, () =>
-    identity(parsed.company),
-  )
+  const context = await withDelegatedERP(parsed.sid, async () => {
+    if (!parsed.scopes.includes(erpScope)) return identity(parsed.company)
+    const current = await identity(
+      isAllCompanies(parsed.company) ? parsed.company : undefined
+    )
+    const selected = current.companies.find((c) => c.name === parsed.company)
+    return selected
+      ? {
+          ...current,
+          company: selected.name,
+          currency: selected.default_currency || current.currency,
+        }
+      : current
+  })
   if (context.user !== parsed.user)
     throw new ERPNextError("ERP identity changed. Sign in again.", 401)
   agentAccess(context, parsed.agent)
@@ -262,12 +269,12 @@ export async function exchangeToken(input: Record<string, string>) {
     return transaction(async (db) => {
       const used = await db.query(
         "UPDATE mcp_codes SET used_at=now() WHERE hash=$1 AND used_at IS NULL AND expires_at>now() RETURNING grant_id",
-        [digest(input.code)],
+        [digest(input.code)]
       )
       if (!used.rowCount)
         throw new ERPNextError(
           "Authorization code was already used or expired.",
-          400,
+          400
         )
       return mint(db, claims)
     })
@@ -298,7 +305,7 @@ export async function exchangeToken(input: Record<string, string>) {
     if (!result)
       throw new ERPNextError(
         "Refresh token reuse detected. Sign in again.",
-        401,
+        401
       )
     return result
   }
@@ -309,7 +316,7 @@ async function mint(db: import("pg").PoolClient, input: Record<string, any>) {
   const active = (
     await db.query(
       "SELECT id FROM mcp_grants WHERE id=$1 AND revoked_at IS NULL AND expires_at>now() FOR UPDATE",
-      [grant],
+      [grant]
     )
   ).rows[0]
   if (!active) throw new ERPNextError("MCP grant expired or was revoked.", 401)
@@ -346,22 +353,31 @@ export async function authenticateMcp(request: Request) {
 export async function revokeToken(token: string, clientId: string) {
   const claims = unseal(
     token.startsWith("dm_refresh_") ? "refresh" : "access",
-    token,
+    token
   )
   if (claims.client !== clientId)
     throw new ERPNextError("Client binding mismatch.", 400)
   await database().query(
     "UPDATE mcp_grants SET revoked_at=now(),refresh_hash=NULL WHERE id=$1",
-    [claims.grant],
+    [claims.grant]
   )
 }
 export async function revokeOwnedGrant(id: string, company?: string) {
   const context = await identity(company)
   await database().query(
-    "UPDATE mcp_grants SET revoked_at=now(),refresh_hash=NULL WHERE id=$1 AND owner=$2 AND company=$3",
-    [z.uuid().parse(id), context.user, context.company],
+    "UPDATE mcp_grants SET revoked_at=now(),refresh_hash=NULL WHERE id=$1 AND owner=$2",
+    [z.uuid().parse(id), context.user]
   )
   return { revoked: true }
+}
+export async function ownedGrants(company?: string) {
+  const context = await identity(company)
+  return (
+    await database().query(
+      "SELECT g.id,c.name AS client,g.agent,g.company,g.scopes,g.expires_at,g.revoked_at,g.created_at FROM mcp_grants g JOIN mcp_clients c ON c.id=g.client_id WHERE g.owner=$1 ORDER BY g.created_at DESC LIMIT 100",
+      [context.user]
+    )
+  ).rows
 }
 export function authorizationMetadata() {
   const origin = externalReady()

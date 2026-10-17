@@ -86,7 +86,8 @@ The setup command creates `deploy/.env` with unique server secrets and
 `platform.config.json` with the production environment and no custom write/channel
 mappings. It refuses to overwrite existing files or rotate existing database/MCP
 secrets. Native reads and external MCP are enabled for the exact ERP role
-`System Manager`. To use an approved restricted role instead, supply it on the
+`Desk User` or `System Manager`, with data restricted by each employee's Frappe
+permissions. To use an approved restricted role instead, supply it on the
 **first** run:
 
 ```bash
@@ -156,6 +157,10 @@ compare a known report with ERP. Try the Explorer and daily briefing. Confirm a
 restricted account cannot read prohibited data. Do not test write actions in ERP.
 
 ## 6. Connect ChatGPT
+
+For personal native Frappe login, complete the one-time
+[Frappe OAuth Client setup](FRAPPE-OAUTH.md). Existing ERP login sessions remain
+supported while that client is unconfigured.
 
 In ChatGPT's custom MCP connection form use:
 

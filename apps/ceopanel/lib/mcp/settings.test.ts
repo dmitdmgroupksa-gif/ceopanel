@@ -4,12 +4,20 @@ vi.mock("../platform/config", () => ({ aiDataApproved: () => true }))
 import { mcpConnectionSettings } from "./settings"
 import { nativeReadAccess } from "../erp-native/read-policy"
 
-const user = { user: "employee@example.com", company: "A", currency: "SAR", companies: [], siteUrl: "https://erp.example", roles: ["Desk User", "Employee"] }
+const user = {
+  user: "employee@example.com",
+  company: "A",
+  currency: "SAR",
+  companies: [],
+  siteUrl: "https://erp.example",
+  roles: ["Desk User", "Employee"],
+}
 function configure() {
   vi.stubEnv("CEOPANEL_ORIGIN", "https://panel.example")
   vi.stubEnv("MCP_EXTERNAL_ENABLED", "true")
   vi.stubEnv("MCP_AUTH_SECRET", "ab".repeat(32))
   vi.stubEnv("DATABASE_URL", "postgresql://fixture-only")
+  vi.stubEnv("PGHOST", "")
   vi.stubEnv("ERP_AI_READ_ENABLED", "true")
   vi.stubEnv("ERP_AI_READ_ROLES", "")
 }
@@ -19,7 +27,14 @@ describe("personal MCP setup", () => {
     configure()
     expect(nativeReadAccess(user)).toBe(true)
     const settings = mcpConnectionSettings(user)
-    expect(settings).toMatchObject({ user: user.user, company: "A", endpoint: "https://panel.example/api/mcp", ready: true, erpRead: true, scopes: ["ceopanel:read", "ceopanel:erp-read"] })
+    expect(settings).toMatchObject({
+      user: user.user,
+      company: "A",
+      endpoint: "https://panel.example/api/mcp",
+      ready: true,
+      erpRead: true,
+      scopes: ["ceopanel:read", "ceopanel:erp-read"],
+    })
     expect(JSON.stringify(settings)).not.toContain(process.env.MCP_AUTH_SECRET)
     expect(JSON.stringify(settings)).not.toContain(process.env.DATABASE_URL)
   })
@@ -31,13 +46,34 @@ describe("personal MCP setup", () => {
   it("preserves an explicitly restricted role allowlist", () => {
     configure()
     vi.stubEnv("ERP_AI_READ_ROLES", "Approved ERP Reader")
-    expect(mcpConnectionSettings(user)).toMatchObject({ ready: false, erpRead: false })
+    expect(mcpConnectionSettings(user)).toMatchObject({
+      ready: false,
+      erpRead: false,
+    })
+  })
+  it("accepts Docker's PGHOST configuration and rejects missing connection storage", () => {
+    configure()
+    vi.stubEnv("DATABASE_URL", "")
+    vi.stubEnv("PGHOST", "postgres")
+    expect(mcpConnectionSettings(user)).toMatchObject({ ready: true })
+    expect(JSON.stringify(mcpConnectionSettings(user))).not.toContain("postgres")
+    vi.stubEnv("PGHOST", "")
+    expect(mcpConnectionSettings(user)).toMatchObject({
+      ready: false,
+      reason: "MCP connection storage is not configured.",
+    })
   })
   it("explains missing configuration without inventing a ready connection", () => {
     configure()
     vi.stubEnv("MCP_EXTERNAL_ENABLED", "false")
-    expect(mcpConnectionSettings(user)).toMatchObject({ ready: false, endpoint: "https://panel.example/api/mcp" })
+    expect(mcpConnectionSettings(user)).toMatchObject({
+      ready: false,
+      endpoint: "https://panel.example/api/mcp",
+    })
     vi.stubEnv("CEOPANEL_ORIGIN", "")
-    expect(mcpConnectionSettings(user)).toMatchObject({ ready: false, endpoint: null })
+    expect(mcpConnectionSettings(user)).toMatchObject({
+      ready: false,
+      endpoint: null,
+    })
   })
 })

@@ -1,4 +1,5 @@
 "use client"
+import { ALL_COMPANIES } from "@/lib/company-scope"
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { Button } from "./ui/button"
@@ -23,9 +24,11 @@ type Preview = {
 export function MCPConsent({
   query,
   siteUrl,
+  frappeLogin = false,
 }: {
   query: string
   siteUrl: string
+  frappeLogin?: boolean
 }) {
   const { locale } = useLocale(),
     ar = locale === "ar"
@@ -48,11 +51,17 @@ export function MCPConsent({
     try {
       const response = await fetch(
         `/api/mcp/oauth/consent?${new URLSearchParams({ query, ...(company ? { company } : {}) })}`,
-        { cache: "no-store" },
+        { cache: "no-store" }
       )
       const data = await response.json()
       if (version !== generation.current) return
       if (response.status === 401) {
+        if (frappeLogin) {
+          window.location.assign(
+            `/api/erpnext/oauth/start?${new URLSearchParams({ next: `/mcp/authorize?${query}` })}`
+          )
+          return
+        }
         setLogin(true)
         return
       }
@@ -63,12 +72,12 @@ export function MCPConsent({
     } catch (error) {
       if (version === generation.current)
         setError(
-          error instanceof Error ? error.message : "Unable to load consent.",
+          error instanceof Error ? error.message : "Unable to load consent."
         )
     } finally {
       if (version === generation.current) setLoading(false)
     }
-  }, [query, company])
+  }, [query, company, frappeLogin])
   useEffect(() => {
     void load()
     return () => {
@@ -146,6 +155,9 @@ export function MCPConsent({
                     setCompany(e.target.value)
                   }}
                 >
+                  <option value={ALL_COMPANIES}>
+                    {ar ? "???? ???????" : "All Companies"}
+                  </option>
                   {preview.context.companies.map((c) => (
                     <option key={c.name}>{c.name}</option>
                   ))}

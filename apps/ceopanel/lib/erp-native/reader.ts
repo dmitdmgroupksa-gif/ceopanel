@@ -66,7 +66,7 @@ const fieldName = /^[\p{L}_][\p{L}\p{M}\p{N}_]*$/u
 export function reportFilters(
   input: unknown,
   definitions: { fieldname: string; required: boolean }[],
-  builder = false,
+  builder = false
 ) {
   if (
     !input ||
@@ -97,7 +97,7 @@ export function reportFilters(
     if (builder && !definitions.some((f) => f.fieldname === key))
       throw new ERPNextError(
         "Unknown Report Builder filter field. Describe the report first.",
-        400,
+        400
       )
     filters[key] = value
   }
@@ -134,7 +134,7 @@ export function reportScriptFilters(script: string): MetaField[] {
             const key = p.key?.name || p.key?.value
             if (
               !["fieldname", "label", "fieldtype", "options", "reqd"].includes(
-                key,
+                key
               )
             )
               continue
@@ -202,10 +202,10 @@ export function erpReader(erp: Reader, context: UserContext) {
           if (!(await erp.canRead(doctype)))
             throw new ERPNextError(
               "ERP read permission denied for this DocType.",
-              403,
+              403
             )
           const body = await erp.request(
-            rpcPath("frappe.desk.form.load.getdoctype", { doctype }),
+            rpcPath("frappe.desk.form.load.getdoctype", { doctype })
           )
           if (
             !Array.isArray(body.docs) ||
@@ -217,10 +217,10 @@ export function erpReader(erp: Reader, context: UserContext) {
           if (!safeBusinessType(meta))
             throw new ERPNextError(
               "This source contains settings or security infrastructure, rather than business records.",
-              403,
+              403
             )
           return body.docs as Meta[]
-        })(),
+        })()
       )
     return metas.get(doctype)!
   }
@@ -236,7 +236,7 @@ export function erpReader(erp: Reader, context: UserContext) {
           (p) =>
             p.read &&
             context.roles.includes(p.role) &&
-            (!p.if_owner || owner === context.user),
+            (!p.if_owner || owner === context.user)
         )
         .map((p) => Number(p.permlevel || 0)),
     ])
@@ -247,7 +247,7 @@ export function erpReader(erp: Reader, context: UserContext) {
         !secretField(f.fieldname, f.fieldtype) &&
         !secretField(f.label || "") &&
         !layout.has(f.fieldtype) &&
-        f.fieldtype !== "Code",
+        f.fieldtype !== "Code"
     )
   }
   type BuilderField = {
@@ -273,7 +273,7 @@ export function erpReader(erp: Reader, context: UserContext) {
     } catch {
       throw new ERPNextError(
         "Saved Report Builder settings are invalid or too large.",
-        409,
+        409
       )
     }
   }
@@ -281,12 +281,12 @@ export function erpReader(erp: Reader, context: UserContext) {
     const visibleTables = new Set(
       readable(docs[0])
         .filter((f) => f.fieldtype.startsWith("Table"))
-        .map((f) => f.fieldname),
+        .map((f) => f.fieldname)
     )
     return docs.flatMap((meta) => {
       if (meta.name !== parent) {
         const connections = docs[0].fields.filter(
-          (f) => f.fieldtype.startsWith("Table") && f.options === meta.name,
+          (f) => f.fieldtype.startsWith("Table") && f.options === meta.name
         )
         // Frappe v14 joins child rows by parent/parenttype, not parentfield.
         // A shared child DocType must not expose rows from a restricted table.
@@ -305,14 +305,14 @@ export function erpReader(erp: Reader, context: UserContext) {
           label: fieldname,
         })),
         ...readable(meta, undefined, docs[0]).filter(
-          (f) => !f.fieldtype.startsWith("Table"),
+          (f) => !f.fieldtype.startsWith("Table")
         ),
       ]
       if (meta.name !== parent)
         fields.push(
           ...["idx", "parent", "parenttype", "parentfield"].map(
-            (fieldname) => ({ fieldname, fieldtype: "Data", label: fieldname }),
-          ),
+            (fieldname) => ({ fieldname, fieldtype: "Data", label: fieldname })
+          )
         )
       return [...new Map(fields.map((f) => [f.fieldname, f])).values()]
         .filter((f) => fieldName.test(f.fieldname))
@@ -329,22 +329,22 @@ export function erpReader(erp: Reader, context: UserContext) {
   function builderField(
     doctype: unknown,
     fieldname: unknown,
-    fields: BuilderField[],
+    fields: BuilderField[]
   ) {
     const field = fields.find(
-      (f) => f.doctype === doctype && f.fieldname === fieldname,
+      (f) => f.doctype === doctype && f.fieldname === fieldname
     )
     if (!field)
       throw new ERPNextError(
         "Saved report references an unknown or restricted field.",
-        403,
+        403
       )
     return field
   }
   function selectedBuilderFields(
     value: unknown,
     fields: BuilderField[],
-    parent: string,
+    parent: string
   ) {
     if (value !== undefined && (!Array.isArray(value) || value.length > 100))
       throw new ERPNextError("Invalid saved report columns.", 409)
@@ -358,14 +358,14 @@ export function erpReader(erp: Reader, context: UserContext) {
         [builderField(parent, "name", fields), ...selected].map((f) => [
           `${f.doctype}:${f.fieldname}`,
           f,
-        ]),
+        ])
       ).values(),
     ]
   }
   function safeBuilderFilters(
     value: unknown,
     fields: BuilderField[],
-    parent: string,
+    parent: string
   ): unknown[][] {
     const ops = new Set([
       "=",
@@ -397,7 +397,7 @@ export function erpReader(erp: Reader, context: UserContext) {
         ? Object.entries(value).map(([field, v]) =>
             Array.isArray(v) && ops.has(v[0])
               ? [field, v[0], v[1]]
-              : [field, Array.isArray(v) ? "in" : "=", v],
+              : [field, Array.isArray(v) ? "in" : "=", v]
           )
         : []
     if (input.length > 100)
@@ -425,7 +425,7 @@ export function erpReader(erp: Reader, context: UserContext) {
   function qualifiedBuilderField(
     value: unknown,
     fields: BuilderField[],
-    parent: string,
+    parent: string
   ) {
     if (typeof value !== "string")
       throw new ERPNextError("Invalid saved grouping field.", 409)
@@ -438,24 +438,24 @@ export function erpReader(erp: Reader, context: UserContext) {
       aggregate = qualifiedBuilderField(
         value.aggregate_on || "name",
         fields,
-        parent,
+        parent
       )
     if (
       !["count", "sum", "avg"].includes(fn) ||
       (fn !== "count" &&
         !["Int", "Float", "Currency", "Percent", "Duration"].includes(
-          aggregate.fieldtype,
+          aggregate.fieldtype
         ))
     )
       throw new ERPNextError(
         "Unsupported saved aggregate function or field.",
-        409,
+        409
       )
     return { field, fn, aggregate }
   }
   async function runBuilder(
     description: { name: string; doctype: string; scope?: string },
-    filters: Row,
+    filters: Row
   ) {
     const parent = description.doctype,
       docs = await bundle(parent),
@@ -505,7 +505,7 @@ export function erpReader(erp: Reader, context: UserContext) {
       if (rows.length + page.length > 10000)
         throw new ERPNextError(
           "Report exceeds 10,000 rows. Narrow its filters; no partial result was returned.",
-          413,
+          413
         )
       rows.push(...page)
       if (page.length < 200) break
@@ -529,13 +529,13 @@ export function erpReader(erp: Reader, context: UserContext) {
     if (
       rows.some((row) =>
         columns.some(
-          (col) => !Object.hasOwn(row, col.alias) || !scalar(row[col.alias]),
-        ),
+          (col) => !Object.hasOwn(row, col.alias) || !scalar(row[col.alias])
+        )
       )
     )
       throw new ERPNextError(
         "ERP omitted a selected report field or returned an unsupported cell. Check the saved layout and field permissions.",
-        409,
+        409
       )
     return {
       report: description.name,
@@ -545,8 +545,8 @@ export function erpReader(erp: Reader, context: UserContext) {
         Object.fromEntries(
           columns
             .filter((c) => scalar(r[c.alias]))
-            .map((c) => [c.fieldname, r[c.alias]]),
-        ),
+            .map((c) => [c.fieldname, r[c.alias]])
+        )
       ),
       rowCount: rows.length,
       totalRowIncluded: false,
@@ -569,7 +569,7 @@ export function erpReader(erp: Reader, context: UserContext) {
   }
   function scopeNote(meta: Meta) {
     return meta.fields.some(
-      (f) => f.fieldtype === "Link" && f.options === "Company",
+      (f) => f.fieldtype === "Link" && f.options === "Company"
     )
       ? "ERP-wide access under native account permissions; records may span companies. Check each record's Company."
       : "Shared or custom source without a Company link; native account permissions apply."
@@ -592,8 +592,8 @@ export function erpReader(erp: Reader, context: UserContext) {
         .slice(1)
         .filter((child) =>
           readable(meta).some(
-            (f) => f.fieldtype.startsWith("Table") && f.options === child.name,
-          ),
+            (f) => f.fieldtype.startsWith("Table") && f.options === child.name
+          )
         )
         .map((child) => ({
           doctype: child.name,
@@ -643,10 +643,37 @@ export function erpReader(erp: Reader, context: UserContext) {
       )
         throw new ERPNextError(
           "Invalid filter or field. Describe the DocType first.",
-          400,
+          400
         )
+      if (
+        meta.fields.some(
+          (field) =>
+            field.fieldname === f[0] &&
+            field.fieldtype === "Link" &&
+            field.options === "Company"
+        ) &&
+        ["=", "in"].includes(f[1])
+      )
+        requireCompanies(f[2])
       return f as Filter
     })
+  }
+  function requireCompanies(value: unknown) {
+    const permitted = new Set(
+      context.companies.length
+        ? context.companies.map((c) => c.name)
+        : [context.company]
+    )
+    const selected = Array.isArray(value) ? value : [value]
+    if (
+      selected.some(
+        (company) => typeof company !== "string" || !permitted.has(company)
+      )
+    )
+      throw new ERPNextError(
+        "Your Frappe account cannot access a requested company. List your accessible companies first.",
+        403
+      )
   }
   async function search(
     doctype: string,
@@ -657,7 +684,7 @@ export function erpReader(erp: Reader, context: UserContext) {
       offset?: number
       limit?: number
       orderBy?: "name asc" | "modified desc, name asc"
-    },
+    }
   ) {
     if (
       input.orderBy !== undefined &&
@@ -666,7 +693,7 @@ export function erpReader(erp: Reader, context: UserContext) {
       throw new ERPNextError("Invalid record ordering.", 400)
     const meta = (await bundle(doctype))[0]
     const available = readable(meta).filter(
-      (f) => !f.fieldtype.startsWith("Table"),
+      (f) => !f.fieldtype.startsWith("Table")
     )
     const allowed = new Set([
       ...systemFields,
@@ -674,7 +701,7 @@ export function erpReader(erp: Reader, context: UserContext) {
     ])
     const filters = checkedFilters(meta, input.filters ?? [])
     const companyFilter = filters.find(
-      (f) => f[0] === "company" && f[1] === "=",
+      (f) => f[0] === "company" && f[1] === "="
     )
     const fields = input.fields?.length
       ? [
@@ -690,14 +717,14 @@ export function erpReader(erp: Reader, context: UserContext) {
           "modified",
           ...available
             .filter((f) =>
-              ["company", "status", "workflow_state"].includes(f.fieldname),
+              ["company", "status", "workflow_state"].includes(f.fieldname)
             )
             .map((f) => f.fieldname),
         ]
     if (fields.length > 30 || fields.some((f) => !allowed.has(f)))
       throw new ERPNextError(
         "Unknown or restricted field. Describe the DocType first.",
-        400,
+        400
       )
     const limit = input.limit ?? 20,
       offset = input.offset ?? 0
@@ -724,11 +751,9 @@ export function erpReader(erp: Reader, context: UserContext) {
       fields,
       filters,
       orFilters: text
-        ? searchFields.map((f): Filter => [
-            f,
-            "like",
-            `%${text.replace(/[\\%_]/g, "\\$&")}%`,
-          ])
+        ? searchFields.map(
+            (f): Filter => [f, "like", `%${text.replace(/[\\%_]/g, "\\$&")}%`]
+          )
         : [],
       orderBy: input.orderBy ?? "modified desc, name asc",
       offset,
@@ -740,19 +765,19 @@ export function erpReader(erp: Reader, context: UserContext) {
     )
       throw new ERPNextError(
         "ERP returned missing or duplicate record identities.",
-        502,
+        502
       )
     if (companyFilter && rows.some((row) => row.company !== companyFilter[2]))
       throw new ERPNextError(
         "ERP returned records outside the requested company filter.",
-        403,
+        403
       )
     const records = rows
       .slice(0, limit)
       .map((row) =>
         Object.fromEntries(
-          fields.filter((f) => scalar(row[f])).map((f) => [f, row[f]]),
-        ),
+          fields.filter((f) => scalar(row[f])).map((f) => [f, row[f]])
+        )
       )
     return {
       doctype,
@@ -779,7 +804,7 @@ export function erpReader(erp: Reader, context: UserContext) {
       const output: Row = Object.fromEntries(
         systemFields
           .filter((key) => scalar(row[key]))
-          .map((key) => [key, row[key]]),
+          .map((key) => [key, row[key]])
       )
       for (const f of readable(schema, doc.owner, meta)) {
         const v = row[f.fieldname]
@@ -789,7 +814,7 @@ export function erpReader(erp: Reader, context: UserContext) {
             if (v.length > 1000)
               throw new ERPNextError(
                 "Document has too many child rows for this view. Use a narrower ERP report.",
-                413,
+                413
               )
             output[f.fieldname] = v.map((r) => project(r, child, depth + 1))
           }
@@ -813,7 +838,10 @@ export function erpReader(erp: Reader, context: UserContext) {
     try {
       return await erp.list<Row>("DocType", {
         fields: ["name", "module", "custom", "istable", "issingle"],
-        filters: [["istable", "=", 0], ["issingle", "=", 0]],
+        filters: [
+          ["istable", "=", 0],
+          ["issingle", "=", 0],
+        ],
       })
     } catch (error) {
       if (!(error instanceof ERPNextError) || error.status !== 403) throw error
@@ -821,42 +849,60 @@ export function erpReader(erp: Reader, context: UserContext) {
     // Frappe v14 exposes DocType names/metadata to Desk through its native Link
     // search, even without administrative read access to DocType definitions.
     // Never use an API key or ask Frappe to ignore business-record permissions.
-    const rows: Row[] = [], names = new Set<string>()
-    for (;;) {
-      const body = await erp.request(rpcPath("frappe.desk.search.search_widget", {
-        doctype: "DocType", txt: "", as_dict: "1", start: String(rows.length), page_length: "200",
-        filters: JSON.stringify({ istable: 0, issingle: 0 }),
-        filter_fields: JSON.stringify(["module", "custom", "istable", "issingle"]),
-      }))
-      if (!Array.isArray(body.values)) throw new ERPNextError("ERP returned an invalid source catalog.", 502)
+    const rows: Row[] = [],
+      names = new Set<string>()
+    {
+      const body = await erp.request(
+        rpcPath("frappe.desk.search.search_widget", {
+          doctype: "DocType",
+          txt: "",
+          as_dict: "1",
+          start: "0",
+          page_length: "10001",
+          filters: JSON.stringify({ istable: 0, issingle: 0 }),
+          filter_fields: JSON.stringify([
+            "module",
+            "custom",
+            "istable",
+            "issingle",
+          ]),
+        })
+      )
+      if (!Array.isArray(body.values))
+        throw new ERPNextError("ERP returned an invalid source catalog.", 502)
       for (const row of body.values) {
-        if (!row || typeof row.name !== "string" || !row.name.trim() || typeof row.module !== "string" || names.has(row.name))
-          throw new ERPNextError("ERP returned invalid or duplicate source metadata.", 502)
+        if (
+          !row ||
+          typeof row.name !== "string" ||
+          !row.name.trim() ||
+          typeof row.module !== "string" ||
+          names.has(row.name)
+        )
+          throw new ERPNextError(
+            "ERP returned invalid or duplicate source metadata.",
+            502
+          )
         names.add(row.name)
-        rows.push(Object.fromEntries(["name", "module", "custom", "istable", "issingle"].map((key) => [key, row[key]])))
+        rows.push(
+          Object.fromEntries(
+            ["name", "module", "custom", "istable", "issingle"].map((key) => [
+              key,
+              row[key],
+            ])
+          )
+        )
       }
-      if (rows.length > 10000) throw new ERPNextError("ERP source discovery exceeded the supported catalog limit.", 409)
-      // A translated DocType may return more than page_length in Frappe v14.
-      // Advance by the actual number received; never truncate that metadata.
-      if (body.values.length < 200) return rows
+      if (rows.length > 10000)
+        throw new ERPNextError(
+          "ERP source discovery exceeded the supported catalog limit.",
+          409
+        )
+      // Frappe v14 returns its complete translated DocType catalog and ignores
+      // offsets. Request one bounded metadata catalog; never loop over it.
+      return rows
     }
   }
-  async function sources(
-    query: string,
-    kind: "all" | "doctype" | "report" = "all",
-    offset = 0,
-    limit = 20,
-  ) {
-    if (
-      query.length > 200 ||
-      !Number.isInteger(offset) ||
-      offset < 0 ||
-      offset > 100000 ||
-      !Number.isInteger(limit) ||
-      limit < 1 ||
-      limit > 50
-    )
-      throw new ERPNextError("Invalid source search.", 400)
+  async function catalog(kind: "all" | "doctype" | "report" = "all") {
     const found: Row[] = []
     if (kind !== "report") {
       const rows = await doctypeCatalog()
@@ -868,7 +914,7 @@ export function erpReader(erp: Reader, context: UserContext) {
             name: r.name,
             module: r.module,
             custom: !!r.custom,
-          })),
+          }))
       )
     }
     if (kind !== "doctype") {
@@ -880,8 +926,7 @@ export function erpReader(erp: Reader, context: UserContext) {
         ...rows
           .filter(
             (r) =>
-              !secretField(r.name) &&
-              safeBusinessType({ name: r.ref_doctype, module: r.module }),
+              !secretField(r.name) && safeBusinessType({ name: r.ref_doctype })
           )
           .map((r) => ({
             kind: "report",
@@ -889,9 +934,30 @@ export function erpReader(erp: Reader, context: UserContext) {
             module: r.module,
             reportType: r.report_type,
             doctype: r.ref_doctype,
-          })),
+          }))
       )
     }
+    if (found.length > 10000)
+      throw new ERPNextError("ERP source catalog is too large.", 409)
+    return found.sort((a, b) => a.name.localeCompare(b.name))
+  }
+  async function sources(
+    query: string,
+    kind: "all" | "doctype" | "report" = "all",
+    offset = 0,
+    limit = 20
+  ) {
+    if (
+      query.length > 200 ||
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      offset > 100000 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 50
+    )
+      throw new ERPNextError("Invalid source search.", 400)
+    const found = await catalog(kind)
     const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean)
     const matches = found
       .map((r) => ({
@@ -903,7 +969,7 @@ export function erpReader(erp: Reader, context: UserContext) {
             (`${r.module} ${r.doctype || ""}`.toLocaleLowerCase().includes(w)
               ? 1
               : 0),
-          0,
+          0
         ),
       }))
       .filter(({ score }) => !words.length || score > 0)
@@ -933,8 +999,8 @@ export function erpReader(erp: Reader, context: UserContext) {
                 return { ...r, canRead: false }
               throw e
             }
-          }),
-        )),
+          })
+        ))
       )
     return {
       results,
@@ -950,7 +1016,7 @@ export function erpReader(erp: Reader, context: UserContext) {
     doctype: string,
     name: string,
     offset = 0,
-    limit = 20,
+    limit = 20
   ) {
     if (
       !Number.isInteger(offset) ||
@@ -962,7 +1028,7 @@ export function erpReader(erp: Reader, context: UserContext) {
     )
       throw new ERPNextError(
         "Invalid attachment page. Use 1 to 100 files.",
-        400,
+        400
       )
     await document(doctype, name)
     const rows = await erp.page<Row>("File", {
@@ -981,7 +1047,7 @@ export function erpReader(erp: Reader, context: UserContext) {
           typeof r.name !== "string" ||
           !r.name.trim() ||
           typeof r.file_name !== "string" ||
-          !r.file_name.trim(),
+          !r.file_name.trim()
       ) ||
       new Set(rows.map((r) => r.name)).size !== rows.length
     )
@@ -1022,11 +1088,8 @@ export function erpReader(erp: Reader, context: UserContext) {
     const meta = rows[0]
     if (!meta || meta.disabled)
       throw new ERPNextError("Enabled report not found.", 404)
-    if (!safeBusinessType({ name: meta.ref_doctype, module: meta.module }))
-      throw new ERPNextError(
-        "Reports on security or settings sources are unavailable.",
-        403,
-      )
+    // Check the actual reference DocType below, not the Report's module. A
+    // custom report's module can differ from the business data it reads.
     await bundle(meta.ref_doctype)
     const script = await rpc("frappe.desk.query_report.get_script", {
       report_name: name,
@@ -1038,12 +1101,12 @@ export function erpReader(erp: Reader, context: UserContext) {
         saved = builderSettings(definition.json)
       const fields = builderFields(
           await bundle(meta.ref_doctype),
-          meta.ref_doctype,
+          meta.ref_doctype
         ),
         selected = selectedBuilderFields(
           saved.fields,
           fields,
-          meta.ref_doctype,
+          meta.ref_doctype
         ),
         group = saved.group_by
           ? checkedGroup(saved.group_by, fields, meta.ref_doctype)
@@ -1067,7 +1130,7 @@ export function erpReader(erp: Reader, context: UserContext) {
         savedFilters: safeBuilderFilters(
           saved.filters || [],
           fields,
-          meta.ref_doctype,
+          meta.ref_doctype
         ),
         groupBy: group
           ? {
@@ -1087,7 +1150,7 @@ export function erpReader(erp: Reader, context: UserContext) {
     const definitions = [
       ...(Array.isArray(script.filters) ? script.filters : []),
       ...reportScriptFilters(
-        typeof script.script === "string" ? script.script : "",
+        typeof script.script === "string" ? script.script : ""
       ),
     ]
     const filters = [
@@ -1097,9 +1160,9 @@ export function erpReader(erp: Reader, context: UserContext) {
             (f: MetaField) =>
               f &&
               typeof f.fieldname === "string" &&
-              !secretField(f.fieldname, f.fieldtype),
+              !secretField(f.fieldname, f.fieldtype)
           )
-          .map((f: MetaField) => [f.fieldname, f]),
+          .map((f: MetaField) => [f.fieldname, f])
       ).values(),
     ].map((f) => ({
       fieldname: f.fieldname,
@@ -1112,7 +1175,7 @@ export function erpReader(erp: Reader, context: UserContext) {
       meta.report_type === "Custom Report"
         ? reportFilters(
             builderSettings((await get("Report", name)).json).filters || {},
-            [],
+            []
           )
         : {}
     return {
@@ -1138,8 +1201,26 @@ export function erpReader(erp: Reader, context: UserContext) {
     const filters = reportFilters(
       { ...description.defaultFilters, ...input },
       description.filters || [],
-      description.reportType === "Report Builder",
+      description.reportType === "Report Builder"
     )
+    for (const [field, value] of Object.entries(filters)) {
+      if (
+        field !== "company" &&
+        !description.filters.some(
+          (f) => f.fieldname === field && f.options === "Company"
+        )
+      )
+        continue
+      if (value === null || value === "" || value === undefined) continue
+      if (
+        description.reportType === "Report Builder" &&
+        Array.isArray(value) &&
+        value.length === 2 &&
+        ["=", "in", "!=", "not in"].includes(value[0])
+      ) {
+        if (["=", "in"].includes(value[0])) requireCompanies(value[1])
+      } else requireCompanies(value)
+    }
     if (description.reportType === "Report Builder")
       return runBuilder(description, filters)
     const result = await rpc("frappe.desk.query_report.run", {
@@ -1157,14 +1238,14 @@ export function erpReader(erp: Reader, context: UserContext) {
     )
       throw new ERPNextError(
         "Report is not immediately available or exceeds 10,000 rows. Narrow its filters; no partial report is returned.",
-        413,
+        413
       )
     const columns = result.columns
       .filter(
         (c: Row) =>
           typeof c.fieldname === "string" &&
           !secretField(c.fieldname, c.fieldtype) &&
-          !secretField(String(c.label || "")),
+          !secretField(String(c.label || ""))
       )
       .map((c: Row) => ({
         fieldname: c.fieldname,
@@ -1182,13 +1263,13 @@ export function erpReader(erp: Reader, context: UserContext) {
             result.columns.map((c: Row, index: number) => [
               c.fieldname,
               row[index],
-            ]),
+            ])
           )
         : row
       return Object.fromEntries(
         columns
           .filter((c: Row) => scalar(normalized[c.fieldname]))
-          .map((c: Row) => [c.fieldname, normalized[c.fieldname]]),
+          .map((c: Row) => [c.fieldname, normalized[c.fieldname]])
       )
     })
     return {
@@ -1220,7 +1301,7 @@ export function erpReader(erp: Reader, context: UserContext) {
     if (workflows.length > 1)
       throw new ERPNextError(
         "Multiple active workflows were returned; review the ERP workflow configuration.",
-        409,
+        409
       )
     if (!workflows.length)
       return {
@@ -1236,7 +1317,7 @@ export function erpReader(erp: Reader, context: UserContext) {
     if (typeof state !== "string" || !state)
       throw new ERPNextError(
         "Workflow state is missing or restricted on this record.",
-        409,
+        409
       )
     const transitions = (workflow.transitions || []).map((t: Row) => ({
       state: t.state,
@@ -1253,12 +1334,12 @@ export function erpReader(erp: Reader, context: UserContext) {
       throw new ERPNextError("ERP returned invalid workflow transitions.")
     if (
       available.some(
-        (t: Row) => typeof t.state === "string" && t.state !== state,
+        (t: Row) => typeof t.state === "string" && t.state !== state
       )
     )
       throw new ERPNextError(
         "Workflow changed while being read. Refresh this record.",
-        409,
+        409
       )
     const immediate = transitions.filter((t: Row) => t.state === state)
     // Reachable states are a graph of possibilities, not a promised approval path.
@@ -1288,7 +1369,7 @@ export function erpReader(erp: Reader, context: UserContext) {
           (t: Row) =>
             context.user === "Administrator" ||
             t.allow_self_approval ||
-            record.values.owner !== context.user,
+            record.values.owner !== context.user
         )
         .map((t: Row) => ({
           action: t.action,
@@ -1302,7 +1383,7 @@ export function erpReader(erp: Reader, context: UserContext) {
   async function permission(
     doctype: string,
     name: string,
-    type: "print" | "export",
+    type: "print" | "export"
   ) {
     // Mirrors frappe.permissions.can_export in Frappe v14. System Manager is
     // explicitly allowed there even when DocType.has_permission('export') is false.
@@ -1317,6 +1398,7 @@ export function erpReader(erp: Reader, context: UserContext) {
       throw new ERPNextError(`ERP ${type} permission denied.`, 403)
   }
   return {
+    catalog,
     sources,
     describe,
     search,

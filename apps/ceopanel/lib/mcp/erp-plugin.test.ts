@@ -45,6 +45,39 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 describe("native ERP MCP protocol", () => {
+  it("exposes the employee's multiple companies without accepting identity overrides", async () => {
+    vi.stubEnv("ERP_AI_READ_ENABLED", "true")
+    vi.stubEnv("ERP_AI_READ_ROLES", "Desk User")
+    const own = scope()
+    own.context.roles = ["Desk User", "Employee"]
+    own.context.companies = [
+      { name: "Company A", default_currency: "SAR" },
+      { name: "Company B", default_currency: "USD" },
+    ]
+    const c = await connected(own)
+    try {
+      const result = await c.client.callTool({
+        name: "erp_list_companies",
+        arguments: {},
+      })
+      expect(result.isError).not.toBe(true)
+      expect(result.structuredContent).toMatchObject({
+        data: {
+          companies: [
+            { name: "Company A", currency: "SAR" },
+            { name: "Company B", currency: "USD" },
+          ],
+        },
+      })
+      const invalid = await c.client.callTool({
+        name: "erp_list_companies",
+        arguments: { user: "Administrator" },
+      })
+      expect(invalid.isError).toBe(true)
+    } finally {
+      await c.close()
+    }
+  })
   async function connected(s = scope()) {
     const server = createBusinessServer(s)
     const client = new Client({ name: "showcase-test", version: "1" })

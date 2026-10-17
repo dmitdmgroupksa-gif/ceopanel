@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 import { delegatedSid } from "./mcp/erp-identity"
 import { ERPNextClient, ERPNextError, type Filter } from "./erpnext-client"
 import { permissionedReader } from "./erp-native/permissioned-reader"
+import { ALL_COMPANIES } from "./company-scope"
 import {
   businessDate,
   makePeriod,
@@ -17,6 +18,15 @@ export const companyName = process.env.COMPANY_NAME || "Durar Masagh"
 export const timezone = process.env.BUSINESS_TIMEZONE || "Asia/Riyadh"
 
 export function selectCompany(companies: Company[], selected?: string) {
+  if (selected === ALL_COMPANIES && companies.length)
+    return {
+      name: ALL_COMPANIES,
+      default_currency: companies.every(
+        (c) => c.default_currency === companies[0].default_currency
+      )
+        ? companies[0].default_currency
+        : "",
+    }
   const company = selected
     ? companies.find((item) => item.name === selected)
     : (companies.find((item) => item.name === process.env.ERPNEXT_COMPANY) ??
@@ -24,7 +34,7 @@ export function selectCompany(companies: Company[], selected?: string) {
   if (!company)
     throw new ERPNextError(
       "Your account cannot access the selected ERPNext company.",
-      403,
+      403
     )
   return company
 }
@@ -41,7 +51,7 @@ export function siteUrl() {
   ) {
     throw new ERPNextError(
       "ERPNext configuration requires an HTTPS site origin.",
-      500,
+      500
     )
   }
   return url.origin
@@ -51,12 +61,16 @@ export async function client() {
   const sid = delegatedSid() || (await cookies()).get(SESSION_COOKIE)?.value
   if (!sid || !/^[A-Za-z0-9_-]+$/.test(sid))
     throw new ERPNextError("Please sign in to ERPNext.", 401)
+  if (/^frappe_oauth_/.test(sid)) {
+    const { oauthERPClient } = await import("./frappe-oauth")
+    return oauthERPClient(sid, siteUrl())
+  }
   return new ERPNextClient(siteUrl(), sid)
 }
 
 export async function loadSnapshot(
   days: number,
-  selectedCompany?: string,
+  selectedCompany?: string
 ): Promise<Snapshot> {
   const erp = await client()
   const user = await erp.user()
@@ -181,7 +195,7 @@ export async function loadSnapshot(
         if (records.some((row) => row.company !== company.name))
           throw new ERPNextError(
             "ERPNext returned records for a different company.",
-            403,
+            403
           )
         return [key, { records, error: null }] as const
       } catch (error) {
@@ -197,7 +211,7 @@ export async function loadSnapshot(
           },
         ] as const
       }
-    }),
+    })
   )
   return {
     mode: "live",

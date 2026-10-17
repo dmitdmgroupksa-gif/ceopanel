@@ -9,9 +9,10 @@ export async function GET(request: Request) {
     return NextResponse.json(
       await loadContext(
         new URL(request.url).searchParams.get("company") || undefined,
-        true,
+        new URL(request.url).searchParams.get("navigation") !== "0",
+        true
       ),
-      { headers },
+      { headers }
     )
   } catch (cause) {
     const response = NextResponse.json(
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
             ? cause.message
             : "ERPNext connection could not be loaded.",
       },
-      { status: cause instanceof ERPNextError ? cause.status : 502, headers },
+      { status: cause instanceof ERPNextError ? cause.status : 502, headers }
     )
     if (response.status === 401) response.cookies.delete(SESSION_COOKIE)
     return response
