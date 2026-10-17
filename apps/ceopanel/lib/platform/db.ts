@@ -4,25 +4,41 @@ let pool: Pool | undefined
 export function database() {
   if (!process.env.DATABASE_URL && !process.env.PGHOST)
     throw new ERPNextError("Platform database is awaiting configuration.", 503)
-  return (pool ??= new Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 10,
-    connectionTimeoutMillis: 5000,
-    statement_timeout: 15000,
-  }))
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 10,
+      connectionTimeoutMillis: 5000,
+      statement_timeout: 15000,
+    })
+    // Idle connections can fail during a database restart. An unhandled pool
+    // error event would terminate the server instead of allowing reconnection.
+    pool.on("error", () =>
+      console.error("Platform database connection failed."),
+    )
+  }
+  return pool
 }
 export async function transaction<T>(fn: (client: PoolClient) => Promise<T>) {
   const client = await database().connect()
+  let broken: Error | undefined
   try {
     await client.query("BEGIN")
     const result = await fn(client)
     await client.query("COMMIT")
     return result
   } catch (error) {
-    await client.query("ROLLBACK")
+    try {
+      await client.query("ROLLBACK")
+    } catch (rollbackError) {
+      broken =
+        rollbackError instanceof Error
+          ? rollbackError
+          : new Error("Database rollback failed.")
+    }
     throw error
   } finally {
-    client.release()
+    client.release(broken)
   }
 }
 export async function audit(

@@ -2,6 +2,7 @@ import { ERPNextError } from "../erpnext-client"
 import { platformConfig } from "./config"
 import { agents, type AgentId } from "./catalog"
 import type { DashboardContext } from "../dashboard-server"
+import { nativeReadAccess, nativeReadRoles } from "../erp-native/read-policy"
 export type UserContext = DashboardContext & { roles: string[] }
 export function companyValues(
   input: unknown,
@@ -20,7 +21,11 @@ export function companyValues(
 }
 export function agentAccess(context: UserContext, id: string) {
   const agent = agents.find((a) => a.id === id),
-    mapping = platformConfig().agents[id]
+    mapping =
+      platformConfig().agents[id] ??
+      (nativeReadAccess(context)
+        ? { roles: nativeReadRoles(), modules: [], reports: [], approvers: [] }
+        : undefined)
   if (
     !agent ||
     !mapping ||

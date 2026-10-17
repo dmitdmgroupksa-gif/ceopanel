@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test"
+import { test, expect } from "./fixtures"
 import { dashboards, emptyDashboard } from "../lib/dashboards"
 
 test("an authenticated department with no assigned dashboards sees a clear empty state", async ({
@@ -20,10 +20,6 @@ test("an authenticated department with no assigned dashboards sees a clear empty
     }),
   )
   await page.goto("/")
-  await openLogin(page)
-  await page
-    .getByRole("button", { name: "Sign in to ERPNext", exact: true })
-    .click()
   await expect(
     page.getByRole("heading", { name: "No dashboards assigned." }),
   ).toBeVisible()
@@ -31,15 +27,7 @@ test("an authenticated department with no assigned dashboards sees a clear empty
   await expect(page.getByLabel("Choose dashboard")).toBeDisabled()
 })
 
-async function openLogin(page: Page) {
-  await page
-    .getByRole("button", { name: "Connect ERPNext", exact: true })
-    .click()
-  await page.getByLabel("ERPNext email or username").fill("test@example.com")
-  await page.getByLabel("Password", { exact: true }).fill("not-a-real-password")
-}
-
-test("all 18 CEO tabs are reachable without loading guessed business data", async ({
+test("all dashboard tabs are reachable without loading guessed business data", async ({
   page,
 }, info) => {
   const errors: string[] = []
@@ -49,24 +37,22 @@ test("all 18 CEO tabs are reachable without loading guessed business data", asyn
   await page.goto("/")
   await expect(page.locator('[data-hydrated="true"]')).toBeVisible()
   const tabs = page.getByRole("tablist", { name: "CEO dashboards" })
-  await expect(tabs.getByRole("tab")).toHaveCount(18)
-  await expect(page.locator('[data-slot="sidebar"]')).toHaveCount(0)
+  await expect(tabs.getByRole("tab")).toHaveCount(dashboards.length)
+  await expect(page.locator('[data-slot="sidebar"]')).toHaveCount(1)
   for (const dashboard of dashboards) {
     await tabs.getByRole("tab", { name: dashboard.title, exact: true }).click()
     await expect(
       page.getByRole("heading", { name: dashboard.title, exact: true }),
     ).toBeVisible()
     await expect(
-      page.getByText(
-        "Awaiting your data source. No company records have been loaded for this dashboard.",
-      ),
+      page.getByText("This dashboard is not connected yet."),
     ).toBeVisible()
     await expect(
       page.getByRole("button", { name: "Export", exact: true }),
-    ).toBeDisabled()
-    await expect(page.getByText("Awaiting data", { exact: true })).toHaveCount(
-      4,
-    )
+    ).toHaveCount(0)
+    await expect(
+      page.getByRole("heading", { name: "No data yet", exact: true }),
+    ).toHaveCount(1)
   }
   expect(requests.some((url) => url.includes("/api/erpnext/snapshot"))).toBe(
     false,
@@ -83,6 +69,8 @@ test("all 18 CEO tabs are reachable without loading guessed business data", asyn
     path: `../../.codex-artifacts/ceopanel/${info.project.name}-ceo-crm.png`,
     fullPage: true,
   })
+  if (info.project.name === "mobile")
+    await page.getByRole("button", { name: "Open navigation" }).click()
   await page.getByRole("button", { name: "Toggle color theme" }).click()
   await expect(page.locator("html")).toHaveClass(/dark/)
   expect(errors).toEqual([])
@@ -120,7 +108,7 @@ test("direct links, quick dashboard selection, and period filters work", async (
 
 test("ERPNext sign-in does not assign any dashboard's data source", async ({
   page,
-}) => {
+}, info) => {
   await page.route("**/api/erpnext/session", (route) =>
     route.fulfill({ json: { ok: true } }),
   )
@@ -140,22 +128,22 @@ test("ERPNext sign-in does not assign any dashboard's data source", async ({
     })
   })
   await page.goto("/")
-  await openLogin(page)
-  await page
-    .getByRole("button", { name: "Sign in to ERPNext", exact: true })
-    .click()
   await expect(
-    page.getByText("ERPNext connected", { exact: true }),
-  ).toBeVisible()
-  await expect(
-    page.getByText("Dashboard data setup pending.", { exact: true }),
+    page.getByRole("heading", { name: "No data yet", exact: true }),
   ).toBeVisible()
   await page.getByLabel("Select company").selectOption("Branch company")
   await expect(page.getByLabel("Select company")).toHaveValue("Branch company")
-  await expect(page.getByText("Awaiting data", { exact: true })).toHaveCount(4)
-  await page.getByRole("button", { name: "Sign out", exact: true }).click()
   await expect(
-    page.getByRole("button", { name: "Connect ERPNext", exact: true }),
+    page.getByRole("heading", { name: "No data yet", exact: true }),
+  ).toBeVisible()
+  if (info.project.name === "mobile")
+    await page.getByRole("button", { name: "Open navigation" }).click()
+  await page
+    .getByRole("button", { name: "Sign out", exact: true })
+    .last()
+    .click()
+  await expect(
+    page.getByRole("heading", { name: "Welcome back", exact: true }),
   ).toBeVisible()
 })
 
@@ -165,6 +153,7 @@ test("a future adapter can populate metrics, charts, records, search, and export
   await page.route("**/api/dashboards/sales-comparison?**", (route) => {
     const data = emptyDashboard(dashboards[0], "2026-10-14")
     data.status = "ready"
+    data.company = "Durar"
     data.metrics[0].value = 120000
     data.metrics[0].format = "currency"
     data.chart.series = [{ key: "sales", label: "Sales" }]
@@ -185,7 +174,7 @@ test("a future adapter can populate metrics, charts, records, search, and export
     return route.fulfill({ json: data })
   })
   await page.goto("/")
-  await expect(page.getByText("SAR 120,000", { exact: true })).toBeVisible()
+  await expect(page.getByText("SAR 120,000.00", { exact: true })).toBeVisible()
   await page.getByLabel("Search dashboard records").fill("no match")
   await expect(
     page.getByText("No records in this view.", { exact: true }),

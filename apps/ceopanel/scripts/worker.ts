@@ -1,3 +1,4 @@
+import "./env"
 import { Worker } from "bullmq"
 import { jobQueue, queueName, redisConnection } from "../lib/platform/queue"
 import { database } from "../lib/platform/db"

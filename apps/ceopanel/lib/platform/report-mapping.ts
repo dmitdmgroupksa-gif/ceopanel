@@ -49,6 +49,8 @@ export function dashboardFromReport(
     else if (values.length) {
       const numbers = numeric(values)
       const sum = numbers.reduce((a, b) => a + b, 0)
+      if (!Number.isFinite(sum))
+        throw new ERPNextError("Report totals exceed the supported range.", 409)
       value = m.aggregate === "average" ? sum / numbers.length : sum
     }
     return {

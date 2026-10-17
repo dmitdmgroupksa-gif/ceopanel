@@ -1,11 +1,12 @@
-import { PlatformPanel } from "@/components/platform-panel"
-import { companyName, siteUrl } from "@/lib/erpnext-server"
+import { Dashboard } from "@/components/dashboard"
+import { timezone } from "@/lib/erpnext-server"
+import { businessDate } from "@/lib/model"
+export const dynamic = "force-dynamic"
 export default function Page() {
   return (
-    <PlatformPanel
-      mode="approvals"
-      companyName={companyName}
-      siteUrl={siteUrl()}
+    <Dashboard
+      initialDashboard="approvals"
+      config={{ timezone, today: businessDate(new Date(), timezone) }}
     />
   )
 }

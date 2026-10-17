@@ -29,3 +29,7 @@ Do not include full payroll/bank records in event payloads.
 ERP integration acceptance requires actual staging tests; local Python compilation only
 checks syntax. Verify allowed reads, denied users/fields, child IDs, concurrent saves,
 workflow conditions and receipt atomicity against the installed Frappe version.
+
+Discovery includes child-table field metadata and marks absent optional DocTypes individually
+instead of aborting the full inventory. Download the result from the portal's integration
+page and follow `apps/ceopanel/STAGING.md` to generate a disabled mapping draft for review.

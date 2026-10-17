@@ -1,5 +1,5 @@
 "use client"
-import Link from "next/link"
+import { sessionFetch as fetch } from "@/lib/session-fetch"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   ArrowLeftRight,
@@ -7,7 +7,6 @@ import {
   Bell,
   Boxes,
   BriefcaseBusiness,
-  Building2,
   CalendarDays,
   ChartNoAxesCombined,
   ChevronDown,
@@ -17,20 +16,18 @@ import {
   ClipboardList,
   Eye,
   FileText,
+  Building2,
+  Factory,
+  MonitorCog,
   HandCoins,
   Landmark,
   LoaderCircle,
-  LogOut,
-  Moon,
   RefreshCw,
   ShoppingCart,
-  Sun,
   Truck,
   Users,
   Wallet,
 } from "lucide-react"
-import { useTheme } from "next-themes"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -40,11 +37,9 @@ import {
   type DashboardData,
   type DashboardId,
 } from "@/lib/dashboards"
-import type { DashboardContext } from "@/lib/dashboard-server"
 import { DashboardPanel } from "./dashboard-panel"
-import { LoginDialog } from "./login-dialog"
-import { PlatformLinks } from "./platform-links"
-import { ApprovalInbox } from "./platform-panel"
+import { PlatformLinks, IconHint } from "./platform-links"
+import { useSession } from "./session-provider"
 import { useLocale } from "./locale-provider"
 
 const icons = {
@@ -66,41 +61,46 @@ const icons = {
   receivables: Wallet,
   salespeople: Users,
   crm: BarChart3,
+  facilities: Building2,
+  it: MonitorCog,
+  factory: Factory,
 }
 type Config = {
-  companyName: string
-  siteUrl: string
   timezone: string
   today: string
 }
 
 export function Dashboard({
-  initial,
-  initialError,
   config,
+  initialDashboard = dashboards[0].id,
 }: {
-  initial: DashboardContext | null
-  initialError: string | null
   config: Config
+  initialDashboard?: DashboardId
 }) {
   const { t, locale } = useLocale()
-  const [context, setContext] = useState(initial)
-  const [active, setActive] = useState<DashboardId>(dashboards[0].id)
-  const [days, setDays] = useState(90)
+  const { context, setContext, preview } = useSession()
+  const [active, setActive] = useState<DashboardId>(initialDashboard)
+  const [days, setDays] = useState(initialDashboard === "approvals" ? 30 : 90)
   const [data, setData] = useState<DashboardData>(() =>
-    emptyDashboard(dashboards[0], config.today),
+    emptyDashboard(findDashboard(initialDashboard)!, config.today),
   )
-  const [error, setError] = useState(initialError)
-  const [connectionError, setConnectionError] = useState(initialError)
+  const [error, setError] = useState<string | null>(null)
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const [connectionError, setConnectionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [connectOpen, setConnectOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const nav = useRef<HTMLDivElement>(null)
   const [scroll, setScroll] = useState({ left: false, right: false })
   const controller = useRef<AbortController | null>(null)
+  const connection = useRef<AbortController | null>(null)
   const sequence = useRef(0)
-  const { resolvedTheme, setTheme } = useTheme()
   const definition = findDashboard(active)!
+  const queryKey = JSON.stringify([
+    active,
+    context?.user,
+    context?.company,
+    days,
+  ])
   const permitted =
     !context?.dashboardIds || context.dashboardIds.includes(active)
   const visibleDashboards = context?.dashboardIds
@@ -108,6 +108,7 @@ export function Dashboard({
     : dashboards
   const visibleData =
     permitted &&
+    loadedKey === queryKey &&
     data.dashboardId === active &&
     data.company === (context?.company ?? null)
       ? data
@@ -117,13 +118,17 @@ export function Dashboard({
     setMounted(true)
     const followHash = () => {
       const selected = findDashboard(window.location.hash.slice(1))
-      if (selected) setActive(selected.id)
+      if (selected) {
+        setActive(selected.id)
+        if (selected.id === "approvals") setDays(30)
+      }
     }
     followHash()
     window.addEventListener("hashchange", followHash)
     return () => {
       window.removeEventListener("hashchange", followHash)
       controller.current?.abort()
+      connection.current?.abort()
     }
   }, [])
 
@@ -160,6 +165,12 @@ export function Dashboard({
     controller.current = abort
     setBusy(true)
     setError(null)
+    if (preview) {
+      setData(emptyDashboard(definition, config.today, days))
+      setLoadedKey(queryKey)
+      setBusy(false)
+      return
+    }
     if (!permitted) {
       setBusy(false)
       return
@@ -171,10 +182,14 @@ export function Dashboard({
         cache: "no-store",
         signal: abort.signal,
       })
+      if (token !== sequence.current || abort.signal.aborted) return
+      // sessionFetch notifies the shared provider before any body parsing.
+      if (response.status === 401) return
       const body = await response.json()
+      if (token !== sequence.current || abort.signal.aborted) return
       if (!response.ok)
         throw new Error(body.error || "Dashboard data could not be loaded.")
-      if (token === sequence.current)
+      if (token === sequence.current) {
         setData({
           ...body,
           company:
@@ -182,17 +197,33 @@ export function Dashboard({
               ? (context?.company ?? null)
               : body.company,
         })
+        setLoadedKey(queryKey)
+      }
     } catch (cause) {
-      if (token === sequence.current && !abort.signal.aborted)
+      if (token === sequence.current && !abort.signal.aborted) {
+        setData(
+          emptyDashboard(definition, config.today, days, context?.company),
+        )
+        setLoadedKey(null)
         setError(
           cause instanceof Error
             ? cause.message
             : "Dashboard data could not be loaded.",
         )
+      }
     } finally {
       if (token === sequence.current) setBusy(false)
     }
-  }, [active, days, context?.company, permitted])
+  }, [
+    active,
+    days,
+    context?.company,
+    permitted,
+    queryKey,
+    preview,
+    definition,
+    config.today,
+  ])
 
   useEffect(() => {
     void refresh()
@@ -200,11 +231,14 @@ export function Dashboard({
   }, [refresh])
   useEffect(() => {
     if (data.status !== "ready" || busy) return
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void refresh()
-    }, 60000)
+    const timer = setInterval(
+      () => {
+        if (document.visibilityState === "visible") void refresh()
+      },
+      active === "approvals" ? 300000 : 60000,
+    )
     return () => clearInterval(timer)
-  }, [data.status, busy, refresh])
+  }, [data.status, busy, refresh, active])
 
   useEffect(() => {
     if (
@@ -217,48 +251,41 @@ export function Dashboard({
   function navigate(id: string) {
     const selected = findDashboard(id)
     if (selected && visibleDashboards.some((d) => d.id === selected.id)) {
+      if (selected.id === "approvals" && active !== selected.id) setDays(30)
       setActive(selected.id)
       window.history.pushState(null, "", `#${selected.id}`)
     }
   }
 
   async function connect(company?: string) {
+    connection.current?.abort()
+    const abort = new AbortController()
+    connection.current = abort
     setConnectionError(null)
     try {
       const params = company ? `?company=${encodeURIComponent(company)}` : ""
       const response = await fetch(`/api/erpnext/context${params}`, {
         cache: "no-store",
+        signal: abort.signal,
       })
+      if (
+        abort.signal.aborted ||
+        connection.current !== abort ||
+        response.status === 401
+      )
+        return
       const body = await response.json()
+      if (abort.signal.aborted || connection.current !== abort) return
       if (!response.ok)
         throw new Error(body.error || "ERPNext connection could not be loaded.")
       setContext(body)
     } catch (cause) {
+      if (abort.signal.aborted || connection.current !== abort) return
       setConnectionError(
         cause instanceof Error
           ? cause.message
           : "ERPNext connection could not be loaded.",
       )
-    }
-  }
-
-  async function signOut() {
-    controller.current?.abort()
-    ++sequence.current
-    setBusy(true)
-    try {
-      const response = await fetch("/api/erpnext/session", { method: "DELETE" })
-      if (!response.ok) throw new Error("Sign-out failed. Please try again.")
-      setContext(null)
-      setData(emptyDashboard(definition, config.today, days))
-      setError(null)
-      setConnectionError(null)
-    } catch (cause) {
-      setConnectionError(
-        cause instanceof Error ? cause.message : "Sign-out failed.",
-      )
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -271,77 +298,13 @@ export function Dashboard({
         className="gap-0"
       >
         <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
-          <div className="mx-auto flex min-h-18 max-w-[1600px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-            <a
-              href="#sales-comparison"
-              onClick={(event) => {
-                event.preventDefault()
-                navigate("sales-comparison")
-              }}
-              className="flex min-w-0 items-center gap-3 rounded focus-visible:ring-2"
-            >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Building2 className="size-5" />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold sm:text-base">
-                  {config.companyName}
-                </span>
-                <span className="block text-[11px] text-muted-foreground">
-                  {t("CEO management platform")}
-                </span>
-              </span>
-            </a>
-            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <Button asChild variant="outline" size="icon-sm">
-                <Link
-                  href="/workspace"
-                  aria-label="Open ERP workspace"
-                  title={t("ERP workspace")}
-                >
-                  <Building2 />
-                </Link>
-              </Button>
-              <Badge
-                variant="outline"
-                className="hidden font-normal md:inline-flex"
-              >
-                {visibleDashboards.length} {t("CEO dashboards")}
-              </Badge>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Toggle color theme"
-                onClick={() =>
-                  setTheme(resolvedTheme === "dark" ? "light" : "dark")
-                }
-              >
-                {mounted && resolvedTheme === "dark" ? <Sun /> : <Moon />}
-              </Button>
-              {context ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={t("Sign out")}
-                  onClick={signOut}
-                  disabled={busy}
-                >
-                  <LogOut />
-                  <span className="hidden sm:inline">{t("Sign out")}</span>
-                </Button>
-              ) : (
-                <Button size="sm" onClick={() => setConnectOpen(true)}>
-                  {t("Connect ERPNext")}
-                </Button>
-              )}
-            </div>
-          </div>
-          <PlatformLinks />
           <div className="mx-auto flex max-w-[1600px] items-center gap-1 px-3 sm:px-6 lg:px-8">
+            <PlatformLinks compact />
             <Button
               variant="ghost"
               size="icon-sm"
               aria-label="Scroll dashboard tabs left"
+              className={!scroll.left && !scroll.right ? "hidden" : undefined}
               disabled={!scroll.left}
               onClick={() =>
                 nav.current?.scrollBy({
@@ -359,19 +322,20 @@ export function Dashboard({
               <TabsList
                 variant="line"
                 aria-label="CEO dashboards"
-                className="h-12 gap-2"
+                className="min-h-14 gap-2"
               >
                 {visibleDashboards.map((item) => {
                   const Icon = icons[item.icon]
                   return (
-                    <TabsTrigger
-                      key={item.id}
-                      value={item.id}
-                      className="flex-none gap-2 px-3"
-                    >
-                      <Icon className="size-4" />
-                      {t(item.title)}
-                    </TabsTrigger>
+                    <IconHint key={item.id} label={t(item.title)}>
+                      <TabsTrigger
+                        value={item.id}
+                        aria-label={t(item.title)}
+                        className="dashboard-icon flex-none size-11 min-h-11 max-h-11 rounded-lg px-0"
+                      >
+                        <Icon aria-hidden="true" className="size-[18px]" />
+                      </TabsTrigger>
+                    </IconHint>
                   )
                 })}
               </TabsList>
@@ -380,6 +344,7 @@ export function Dashboard({
               variant="ghost"
               size="icon-sm"
               aria-label="Scroll dashboard tabs right"
+              className={!scroll.left && !scroll.right ? "hidden" : undefined}
               disabled={!scroll.right}
               onClick={() =>
                 nav.current?.scrollBy({
@@ -393,46 +358,16 @@ export function Dashboard({
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1600px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm">
-            <p className="text-muted-foreground">
-              <span className="font-medium text-foreground">
-                {t(
-                  visibleData.status === "ready"
-                    ? "Company data connected."
-                    : "Dashboard data setup pending.",
-                )}
-              </span>{" "}
-              {t(
-                visibleData.status === "ready"
-                  ? "Figures follow the selected company and reporting period."
-                  : "Your company data will appear as each dashboard is connected.",
-              )}
-            </p>
-            <Badge variant="outline" className="gap-1.5 font-normal">
-              <span
-                className={`size-1.5 rounded-full ${context ? "bg-emerald-500" : "bg-muted-foreground/50"}`}
-              />
-              {context ? t("ERPNext connected") : t("ERPNext ready to connect")}
-            </Badge>
-          </div>
           {(connectionError || error) && (
             <div
               role="alert"
               className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-800 dark:text-amber-300"
             >
               {t(connectionError || error || "")}
-              {error && visibleData.status === "ready" && (
-                <span className="block pt-1 text-xs">
-                  Showing the last successful data for {visibleData.company}.
-                </span>
-              )}
             </div>
           )}
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
             <div className="min-w-0">
-              <p className="mb-2 text-xs text-muted-foreground">
-                {context?.company || config.companyName} / Dashboards
-              </p>
               <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">
                 {t(
                   visibleDashboards.length
@@ -440,13 +375,13 @@ export function Dashboard({
                     : "No dashboards assigned.",
                 )}
               </h1>
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                {t(
-                  visibleDashboards.length
-                    ? definition.description
-                    : "Ask your administrator to configure your department views.",
-                )}
-              </p>
+              {!visibleDashboards.length && (
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  {t(
+                    "Ask your administrator to configure your department views.",
+                  )}
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
@@ -465,34 +400,64 @@ export function Dashboard({
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2.5 top-3 size-3.5 text-muted-foreground" />
               </div>
-              {context && context.companies.length > 1 && (
+              {definition.scope === "erp-account" ? (
+                <span className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
+                  {t("ERP account scope")}
+                </span>
+              ) : (
+                context &&
+                context.companies.length > 1 && (
+                  <select
+                    aria-label={t("Select company")}
+                    className="h-9 max-w-48 rounded-md border bg-background px-3 text-sm"
+                    value={context.company}
+                    onChange={(event) => void connect(event.target.value)}
+                  >
+                    {context.companies.map((item) => (
+                      <option key={item.name} value={item.name}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                )
+              )}
+              {definition.window !== "current" && (
                 <select
-                  aria-label={t("Select company")}
-                  className="h-9 max-w-48 rounded-md border bg-background px-3 text-sm"
-                  value={context.company}
-                  onChange={(event) => void connect(event.target.value)}
+                  aria-label={t("Reporting period")}
+                  className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
+                  value={days}
+                  onChange={(event) => setDays(Number(event.target.value))}
                 >
-                  {context.companies.map((item) => (
-                    <option key={item.name} value={item.name}>
-                      {item.name}
-                    </option>
-                  ))}
+                  <option value={30}>
+                    {t(
+                      definition.window === "upcoming"
+                        ? "Next 30 days"
+                        : "Last 30 days",
+                    )}
+                  </option>
+                  <option value={90}>
+                    {t(
+                      definition.window === "upcoming"
+                        ? "Next 90 days"
+                        : "Last 90 days",
+                    )}
+                  </option>
+                  <option value={365}>
+                    {t(
+                      definition.window === "upcoming"
+                        ? "Next 12 months"
+                        : "Last 12 months",
+                    )}
+                  </option>
                 </select>
               )}
-              <select
-                aria-label={t("Reporting period")}
-                className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
-                value={days}
-                onChange={(event) => setDays(Number(event.target.value))}
-              >
-                <option value={30}>{t("Last 30 days")}</option>
-                <option value={90}>{t("Last 90 days")}</option>
-                <option value={365}>{t("Last 12 months")}</option>
-              </select>
               <Button
                 variant="outline"
-                size="sm"
+                size="icon-sm"
                 className="h-9"
+                aria-label={t("Refresh")}
+                title={t("Refresh")}
+                aria-busy={busy}
                 disabled={busy || !visibleDashboards.length}
                 onClick={() => void refresh()}
               >
@@ -501,51 +466,36 @@ export function Dashboard({
                 ) : (
                   <RefreshCw />
                 )}
-                {busy ? t("Refreshing…") : t("Refresh")}
               </Button>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
-              {visibleData.period.from} – {visibleData.period.to}
+              {definition.window === "current"
+                ? `${t("As of")} ${visibleData.period.to}`
+                : `${visibleData.period.from} – ${visibleData.period.to}`}
             </span>
             <span role="status" aria-live="polite">
               {busy
                 ? t("Loading dashboard…")
                 : visibleData.updatedAt
                   ? `${t("Last updated")} ${new Date(visibleData.updatedAt).toLocaleTimeString(locale, { timeZone: config.timezone, hour: "2-digit", minute: "2-digit" })}`
-                  : t("Awaiting your data source")}
+                  : null}
             </span>
           </div>
           {visibleDashboards.map((item) => (
             <TabsContent key={item.id} value={item.id}>
-              {item.id === "approvals" && context && (
-                <div className="mb-6">
-                  <ApprovalInbox
-                    key={context.company}
-                    company={context.company}
-                  />
-                </div>
-              )}
-              <DashboardPanel definition={item} data={visibleData} />
+              <DashboardPanel
+                definition={item}
+                data={visibleData}
+                siteUrl={context?.siteUrl}
+                loading={busy}
+                failed={!!error}
+              />
             </TabsContent>
           ))}
-          <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-5 text-[11px] text-muted-foreground">
-            <span>{config.companyName} · CEO Panel</span>
-            <span>
-              {context
-                ? `Signed in as ${context.user}`
-                : `Prepared for ${new URL(config.siteUrl).host}`}
-            </span>
-          </footer>
         </main>
       </Tabs>
-      <LoginDialog
-        open={connectOpen}
-        onOpenChange={setConnectOpen}
-        siteUrl={config.siteUrl}
-        onConnected={() => connect()}
-      />
     </div>
   )
 }

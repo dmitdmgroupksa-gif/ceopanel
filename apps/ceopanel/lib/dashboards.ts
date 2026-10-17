@@ -89,12 +89,13 @@ export const dashboards = [
     id: "dispatch-logistics",
     title: "Dispatch & Logistics",
     icon: "logistics",
-    description: "Track dispatches, deliveries, and logistics activity.",
+    description:
+      "Submitted delivery trips, vehicles and recorded delivery status.",
     metrics: [
-      "Dispatches",
-      "Completed deliveries",
-      "Pending deliveries",
-      "Delayed deliveries",
+      "Delivery trips",
+      "Completed trips",
+      "In transit",
+      "Past scheduled date",
     ],
     chart: "Delivery performance",
     columns: ["Dispatch", "Customer", "Delivery date", "Destination", "Status"],
@@ -112,8 +113,16 @@ export const dashboards = [
     id: "approvals",
     title: "Approvals Dashboard",
     icon: "approvals",
-    description: "Keep company approvals and decisions in view.",
-    metrics: ["Pending approvals", "Approved", "Rejected", "Overdue approvals"],
+    scope: "erp-account",
+    window: "history",
+    description:
+      "Visible ERP requests with further workflow steps and candidate roles.",
+    metrics: [
+      "Requests with next steps",
+      "Draft documents",
+      "Submitted documents",
+      "Workflow types",
+    ],
     chart: "Approval activity",
     columns: ["Request", "Requested by", "Type", "Submitted", "Status"],
   },
@@ -149,12 +158,14 @@ export const dashboards = [
     id: "tasks",
     title: "Task Dashboard",
     icon: "tasks",
-    description: "Follow team tasks, deadlines, and completion.",
+    scope: "erp-account",
+    window: "current",
+    description: "Custom ERP tasks, assignees and due dates.",
     metrics: [
       "Open tasks",
-      "Completed tasks",
       "Overdue tasks",
-      "Completion rate",
+      "Unassigned tasks",
+      "Missing due dates",
     ],
     chart: "Task progress",
     columns: ["Task", "Assigned to", "Priority", "Due date", "Status"],
@@ -212,6 +223,53 @@ export const dashboards = [
     columns: ["Salesperson", "Team", "Sales", "Target", "Achievement"],
   },
   {
+    id: "facilities",
+    title: "Facilities & Renewals",
+    icon: "facilities",
+    window: "upcoming",
+    description: "Facility contract, license and rent installment dates.",
+    metrics: [
+      "Facilities",
+      "Expired deadlines",
+      "Renewals in window",
+      "Unpaid installments due",
+    ],
+    chart: "Recorded deadlines",
+    columns: ["Facility", "Deadline", "Due date", "Status"],
+  },
+  {
+    id: "it-service",
+    title: "IT Service",
+    icon: "it",
+    scope: "erp-account",
+    window: "current",
+    description: "IT support requests, priorities and technician queues.",
+    metrics: [
+      "Open tickets",
+      "High priority tickets",
+      "Unassigned tickets",
+      "Due before today",
+    ],
+    chart: "Tickets by status",
+    columns: ["Ticket", "Subject", "Priority", "Status"],
+  },
+  {
+    id: "factory",
+    title: "Factory Operations",
+    icon: "factory",
+    scope: "erp-account",
+    window: "current",
+    description: "Factory job orders, branches and scheduled completion dates.",
+    metrics: [
+      "Open job orders",
+      "Past end date",
+      "Completed job orders",
+      "Missing end dates",
+    ],
+    chart: "Job orders by status",
+    columns: ["Job order", "Branch", "Start date", "End date", "Status"],
+  },
+  {
     id: "crm",
     title: "CRM Dashboard",
     icon: "crm",
@@ -222,7 +280,10 @@ export const dashboards = [
   },
 ] as const
 
-export type DashboardDefinition = (typeof dashboards)[number]
+export type DashboardDefinition = (typeof dashboards)[number] & {
+  scope?: "company" | "erp-account"
+  window?: "history" | "current" | "upcoming"
+}
 export type DashboardId = DashboardDefinition["id"]
 export type MetricValue = {
   label: string
@@ -231,25 +292,29 @@ export type MetricValue = {
   note?: string
 }
 export type DashboardData = {
+  scope?: "company" | "erp-account"
   dashboardId: DashboardId
   status: "awaiting-data" | "ready"
   company: string | null
   period: Period
   currency: string
   updatedAt: string | null
+  note?: string
   metrics: MetricValue[]
   chart: {
+    type?: "area" | "bar"
     title: string
     series: { key: string; label: string }[]
     points: { label: string; [series: string]: string | number }[]
   }
   table: {
+    links?: Record<string, string>
     columns: { key: string; label: string }[]
     rows: { id: string; [field: string]: string | number | null }[]
   }
 }
 
-export function findDashboard(id: string) {
+export function findDashboard(id: string): DashboardDefinition | undefined {
   return dashboards.find((dashboard) => dashboard.id === id)
 }
 
@@ -257,13 +322,23 @@ export function emptyDashboard(
   definition: DashboardDefinition,
   today: string,
   days = 90,
-  company: string | null = null
+  company: string | null = null,
 ): DashboardData {
+  const period = makePeriod(definition.window === "current" ? 1 : days, today)
+  if (definition.window === "upcoming") {
+    period.from = today
+    period.to = new Date(
+      Date.parse(`${today}T00:00:00Z`) + (days - 1) * 86400000,
+    )
+      .toISOString()
+      .slice(0, 10)
+  }
   return {
     dashboardId: definition.id,
     status: "awaiting-data",
     company,
-    period: makePeriod(days, today),
+    period,
+    scope: definition.scope || "company",
     currency: "SAR",
     updatedAt: null,
     metrics: definition.metrics.map((label) => ({ label, value: null })),

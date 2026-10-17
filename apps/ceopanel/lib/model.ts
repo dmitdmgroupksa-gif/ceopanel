@@ -1,3 +1,5 @@
+import { spreadsheetText } from "./spreadsheet"
+
 export type ERPDocument = {
   name: string
   [field: string]: string | number | null
@@ -60,7 +62,7 @@ export function outstanding(dataset: Dataset) {
         (total, row) =>
           total +
           numeric(row.outstanding_amount) * numeric(row.conversion_rate ?? 1),
-        0
+        0,
       )
 }
 
@@ -69,7 +71,7 @@ export function overdue(dataset: Dataset, today: string) {
     (row) =>
       String(row.due_date ?? "") !== "" &&
       String(row.due_date) < today &&
-      numeric(row.outstanding_amount) > 0
+      numeric(row.outstanding_amount) > 0,
   )
 }
 
@@ -105,11 +107,10 @@ export function csv(rows: (string | number | null)[][]) {
       .map((row) =>
         row
           .map((value) => {
-            let cell = String(value ?? "")
-            if (/^[=+\-@\t\r]/.test(cell)) cell = "'" + cell
+            const cell = spreadsheetText(value)
             return '"' + cell.replaceAll('"', '""') + '"'
           })
-          .join(",")
+          .join(","),
       )
       .join("\r\n")
   )

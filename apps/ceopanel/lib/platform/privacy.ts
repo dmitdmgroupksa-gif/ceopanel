@@ -1,5 +1,13 @@
 // Defense in depth for approved collections and user prompts. Collection owners
 // still review content: pattern redaction cannot detect every sensitive value.
+export function redactCredentials(text: string) {
+  return text
+    .replace(
+      /^.*(?:password|api[_ -]?key|api[_ -]?secret|access[_ -]?token|private[_ -]?key|كلمة المرور).*$/gim,
+      "[Credential removed]",
+    )
+    .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, "[Credential removed]")
+}
 export function redactRestrictedText(text: string) {
   return text
     .replace(

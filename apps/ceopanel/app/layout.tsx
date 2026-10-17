@@ -1,8 +1,11 @@
 import type { Metadata } from "next"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { LocaleProvider } from "@/components/locale-provider"
+import { SessionProvider } from "@/components/session-provider"
+import { localAuthDisabled } from "@/lib/auth-mode"
+import { companyName, SESSION_COOKIE } from "@/lib/erpnext-server"
 
 export const metadata: Metadata = {
   title: "Durar Masagh | CEO Panel",
@@ -16,8 +19,14 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  const cookieStore = await cookies()
   const locale =
-    (await cookies()).get("ceopanel_locale")?.value === "ar" ? "ar" : "en"
+    cookieStore.get("ceopanel_locale")?.value === "ar" ? "ar" : "en"
+  const previewCompany =
+    localAuthDisabled((await headers()).get("host") || "") &&
+    !cookieStore.get(SESSION_COOKIE)?.value
+      ? process.env.ERPNEXT_COMPANY || companyName
+      : undefined
   return (
     <html
       lang={locale}
@@ -26,7 +35,11 @@ export default async function RootLayout({
     >
       <body>
         <ThemeProvider>
-          <LocaleProvider initial={locale}>{children}</LocaleProvider>
+          <LocaleProvider initial={locale}>
+            <SessionProvider previewCompany={previewCompany}>
+              {children}
+            </SessionProvider>
+          </LocaleProvider>
         </ThemeProvider>
       </body>
     </html>

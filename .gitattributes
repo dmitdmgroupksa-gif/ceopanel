@@ -1,0 +1,3 @@
+# Deployment scripts must run on Linux after a Windows checkout.
+*.sh text eol=lf
+Dockerfile* text eol=lf

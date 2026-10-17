@@ -79,7 +79,116 @@
 .recharts-cartesian-grid line {
   stroke: var(--border);
 }
+.portal-shell {
+  --sidebar-width: 248px;
+}
+.portal-shell.sidebar-compact {
+  --sidebar-width: 80px;
+}
+.portal-sidebar {
+  width: var(--sidebar-width);
+  transition: width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.portal-content {
+  transition: margin-inline-start 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (min-width: 1024px) {
+  .portal-content {
+    margin-inline-start: var(--sidebar-width);
+  }
+}
+.sidebar-link {
+  transition:
+    background-color 180ms,
+    color 180ms,
+    box-shadow 180ms;
+}
+.dashboard-icon {
+  transition:
+    background-color 180ms,
+    color 180ms,
+    box-shadow 180ms;
+}
+.dashboard-icon svg {
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) {
+  .dashboard-icon:hover svg {
+    transform: translateY(-3px) scale(1.14);
+  }
+}
+.dashboard-icon:focus-visible svg {
+  transform: translateY(-3px) scale(1.14);
+}
+.dashboard-icon[data-state="active"] {
+  background: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.nav-hint {
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+}
+.nav-hint[data-state="delayed-open"],
+.nav-hint[data-state="instant-open"] {
+  animation: nav-pop-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.nav-hint[data-state="closed"] {
+  animation: nav-pop-out 100ms ease-in;
+}
+@keyframes nav-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes nav-pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+.sidebar-overlay[data-state="open"] {
+  animation: sidebar-fade 180ms ease-out;
+}
+.sidebar-overlay[data-state="closed"] {
+  animation: sidebar-fade 150ms ease-in reverse;
+}
+.sidebar-drawer {
+  --drawer-from: -100%;
+}
+.sidebar-drawer[dir="rtl"] {
+  --drawer-from: 100%;
+}
+.sidebar-drawer[data-state="open"] {
+  animation: sidebar-slide 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sidebar-drawer[data-state="closed"] {
+  animation: sidebar-slide 180ms ease-in reverse;
+}
+@keyframes sidebar-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sidebar-slide {
+  from {
+    transform: translateX(var(--drawer-from));
+  }
+  to {
+    transform: translateX(0);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
+  .dashboard-icon:hover svg,
+  .dashboard-icon:focus-visible svg {
+    transform: none;
+  }
   *,
   *::before,
   *::after {

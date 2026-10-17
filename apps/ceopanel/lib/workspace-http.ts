@@ -2,6 +2,7 @@ import "server-only"
 import { NextResponse } from "next/server"
 import { ERPNextError } from "./erpnext-client"
 import { validOrigin } from "./erpnext-server"
+import { requestBody } from "./request-body"
 export const workspaceHeaders = {
   "Cache-Control": "private, no-store",
   Vary: "Cookie",
@@ -17,18 +18,18 @@ export function workspaceError(cause: unknown) {
           ? cause.message
           : "The ERPNext operation could not be completed.",
     },
-    cause instanceof ERPNextError ? cause.status : 502
+    cause instanceof ERPNextError ? cause.status : 502,
   )
 }
 export async function workspaceBody(request: Request) {
   if (!validOrigin(request))
     throw new ERPNextError(
       "This request must come from your company workspace.",
-      403
+      403,
     )
-  const text = await request.text()
-  if (text.length > 200000)
-    throw new ERPNextError("This record is too large to save here.", 413)
+  const text = (
+    await requestBody(request, 200000, "This record is too large to save here.")
+  ).toString("utf8")
   try {
     const value = JSON.parse(text)
     if (!value || typeof value !== "object" || Array.isArray(value))

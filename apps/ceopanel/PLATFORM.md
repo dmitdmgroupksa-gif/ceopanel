@@ -73,6 +73,12 @@ rows preserve server-owned and uneditable fields, while cross-parent row IDs are
 
 ## Configure and validate staging
 
+Use [STAGING.md](./STAGING.md) for the ordered rollout, private setup, discovery draft
+import, phase-specific diagnostics and disposable integration checks. `npm run platform:setup`
+preserves existing files; `npm run platform:check -- --connections --phase=foundation`
+checks infrastructure before enabling company mappings. The `/integrations` rollout checklist
+is restricted to native System Managers and reports configuration without certifying live access.
+
 1. Obtain a staging clone URL, actual Company document name, installed versions, and test
    accounts for CEO, managers, employees and an unauthorized/cross-company user.
 2. Install the bundled `integrations/frappe` app on that clone. See its README. If the cloud
@@ -104,6 +110,9 @@ rows preserve server-owned and uneditable fields, while cross-parent row IDs are
 
 Configuration is loaded at startup for catalogs/adapters; restart web/worker services after
 changing mappings. An unconfigured integration remains visibly unavailable.
+The validated configuration snapshot is reused for subsequent requests. Saved photo downloads
+recheck the proposal's current ERP source permissions as well as ownership and approver roles.
+ERP webhook deduplication and freshness updates commit together so failed deliveries can retry.
 
 Configuration validation catches duplicate identifiers, unknown agent/source references,
 invalid period filters and upload roles without read access. Collections list all uploader
@@ -120,6 +129,7 @@ request and a verified ERP session. Sensitive operations never fall back to an a
 | --- | --- | --- |
 | `status` | GET | Public configuration availability without secrets or company data |
 | `health` | GET | PostgreSQL/Redis readiness; 503 when either dependency is unavailable |
+| `readiness` | GET | System Manager configuration checklist; independent of platform database availability |
 | `agents`, `runs` | GET | Agent availability and the current user's permitted history |
 | `agents/run` | POST | Run an agent in English/Arabic; five runs per user/minute |
 | `proposals` | GET | Own proposals and permitted approval reviews |

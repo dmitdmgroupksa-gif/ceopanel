@@ -1,7 +1,9 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   ActivityIndicator,
+  BackHandler,
   Linking,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -20,6 +22,16 @@ const localeObserver = `(() => {
 
 export default function App() {
   const web = useRef<WebView>(null)
+  const canGoBack = useRef(false)
+  useEffect(() => {
+    if (Platform.OS !== "android") return
+    const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (!canGoBack.current || !web.current) return false
+      web.current.goBack()
+      return true
+    })
+    return () => listener.remove()
+  }, [])
   const [failed, setFailed] = useState(false),
     [arabic, setArabic] = useState(false)
   const failedLoad = useRef(false)
@@ -70,7 +82,7 @@ export default function App() {
             )}
             <WebView
               ref={web}
-              source={{ uri: `${origin}/agents` }}
+              source={{ uri: `${origin}/` }}
               style={styles.web}
               originWhitelist={["https://*", "about:blank"]}
               sharedCookiesEnabled={false}
@@ -94,6 +106,9 @@ export default function App() {
               onLoadStart={(event) => {
                 failedLoad.current = false
                 topUrl.current = event.nativeEvent.url
+              }}
+              onNavigationStateChange={(state) => {
+                canGoBack.current = state.canGoBack
               }}
               onError={() => {
                 failedLoad.current = true

@@ -1,0 +1,5 @@
+FROM pgvector/pgvector:pg17
+RUN apt-get update && apt-get install -y --no-install-recommends age \
+    && rm -rf /var/lib/apt/lists/*
+COPY db /audit/db
+COPY deploy/backup.sh deploy/test-backup-restore.sh /audit/

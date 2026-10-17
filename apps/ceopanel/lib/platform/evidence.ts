@@ -3,6 +3,10 @@ import { database } from "./db"
 import { agentAccess, collectionAccess, type UserContext } from "./policy"
 import { platformConfig } from "./config"
 import { client } from "../erpnext-server"
+import { nativeReadAccess } from "../erp-native/read-policy"
+import { erpReader } from "../erp-native/reader"
+import { erpExport } from "../erp-native/files"
+import { createHash } from "node:crypto"
 
 type Item = {
   id: string
@@ -46,6 +50,76 @@ export async function permittedEvidence<T extends Item>(
   const config = platformConfig(),
     checks: Check[] = [],
     candidates: T[] = []
+  let nativeReader: Promise<ReturnType<typeof erpReader>> | undefined
+  const nativeChecks = new Map<string, Promise<string | null>>()
+  async function nativeDigest(e: Record<string, unknown>) {
+    // Revalidate identical sources once within this history request only. A new
+    // request always checks current ERP permissions and content again.
+    const key = JSON.stringify([
+      e.type,
+      e.source,
+      e.names,
+      e.query,
+      e.filters,
+      e.request,
+    ])
+    if (!nativeChecks.has(key))
+      nativeChecks.set(
+        key,
+        (async () => {
+          if (e.type === "file") {
+            await erpExport(await client(), context, e.request, false)
+            return null
+          }
+          if (typeof e.source !== "string") throw new Error("Unknown source")
+          if (!nativeReader)
+            nativeReader = client().then((erp) => erpReader(erp, context))
+          const reader = await nativeReader
+          const names =
+            Array.isArray(e.names) &&
+            e.names.every((n) => typeof n === "string")
+              ? e.names
+              : []
+          const value =
+            e.type === "document" && names.length === 1
+              ? await reader.document(e.source, names[0])
+              : e.type === "approvals" && names.length === 1
+                ? await reader.approvals(e.source, names[0])
+                : e.type === "attachments" &&
+                    names.length === 1 &&
+                    e.query &&
+                    typeof e.query === "object"
+                  ? await reader.attachments(
+                      e.source,
+                      names[0],
+                      (e.query as { offset?: number }).offset,
+                      (e.query as { limit?: number }).limit,
+                    )
+                  : e.type === "records" &&
+                      e.query &&
+                      typeof e.query === "object"
+                    ? await reader.search(e.source, e.query)
+                    : e.type === "report" &&
+                        e.filters &&
+                        typeof e.filters === "object"
+                      ? await reader.runReport(
+                          e.source,
+                          e.filters as Record<string, unknown>,
+                        )
+                      : e.type === "schema"
+                        ? await reader.describe(e.source)
+                        : e.type === "report-schema"
+                          ? await reader.report(e.source)
+                          : null
+          if (!value) throw new Error("Unknown source")
+          const { provenance: _provenance, ...content } = value
+          return createHash("sha256")
+            .update(JSON.stringify(content))
+            .digest("hex")
+        })(),
+      )
+    return nativeChecks.get(key)!
+  }
   const documentIds = items.flatMap((item) =>
     item.evidence
       .filter(
@@ -87,7 +161,15 @@ export async function permittedEvidence<T extends Item>(
       for (const raw of item.evidence) {
         if (!raw || typeof raw !== "object") throw new Error("Unknown evidence")
         const e = raw as Record<string, unknown>
-        if (typeof e.id === "string" && "chunk" in e) {
+        if (e.kind === "native-erp") {
+          if (!nativeReadAccess(context))
+            throw new Error("ERP-wide access revoked")
+          const digest = await nativeDigest(e)
+          // No raw ERP rows are stored as evidence. Hide an old answer if its
+          // source changed or can no longer be reproduced under current access.
+          if (e.type !== "file" && digest !== e.digest)
+            throw new Error("Source changed or access revoked")
+        } else if (typeof e.id === "string" && "chunk" in e) {
           const doc = documents.find((d) => d.id === e.id)
           if (!doc) throw new Error("Document unavailable")
           collectionAccess(context, doc.collection)

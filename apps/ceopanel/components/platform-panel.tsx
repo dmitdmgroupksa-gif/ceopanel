@@ -1,22 +1,20 @@
 "use client"
+import { sessionFetch as fetch } from "@/lib/session-fetch"
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import {
   Bot,
   BookOpen,
-  ShieldCheck,
   Send,
   Upload,
   RefreshCw,
   CircleCheck,
   LoaderCircle,
-  Database,
-  Cable,
   Bell,
   FileText,
 } from "lucide-react"
 import { agents, type Proposal } from "@/lib/platform/catalog"
-import type { DashboardContext } from "@/lib/dashboard-server"
+import { useSession } from "./session-provider"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Badge } from "./ui/badge"
@@ -29,11 +27,12 @@ import {
 } from "./ui/card"
 import { PlatformLinks } from "./platform-links"
 import { useLocale } from "./locale-provider"
-import { LoginDialog } from "./login-dialog"
 import { VoiceInput, ReadAnswer } from "./voice-input"
 import { FieldUpdates } from "./field-updates"
 import { MCPSettings } from "./mcp-settings"
 import { InputReadiness } from "./input-readiness"
+import { RolloutReadiness } from "./rollout-readiness"
+import { ERP_READ_ONLY } from "@/lib/erp-access"
 
 export type PlatformMode =
   | "agents"
@@ -241,7 +240,7 @@ export function ApprovalInbox({ company }: { company?: string }) {
                 {JSON.stringify(row.evidence, null, 2)}
               </pre>
             </details>
-            {row.canReview && row.status === "pending" && (
+            {!ERP_READ_ONLY && row.canReview && row.status === "pending" && (
               <div className="flex flex-wrap gap-2">
                 <Button
                   disabled={!!busy}
@@ -287,19 +286,10 @@ function Empty({ label }: { label: string }) {
     </div>
   )
 }
-export function PlatformPanel({
-  mode,
-  companyName,
-  siteUrl,
-}: {
-  mode: PlatformMode
-  companyName: string
-  siteUrl: string
-}) {
+export function PlatformPanel({ mode }: { mode: PlatformMode }) {
   const { locale, t } = useLocale()
-  const [context, setContext] = useState<DashboardContext | null>(null),
-    [status, setStatus] = useState<Status | null>(null),
-    [login, setLogin] = useState(false)
+  const { context, setContext, preview } = useSession()
+  const [status, setStatus] = useState<Status | null>(null)
   const [selected, setSelected] = useState("executive"),
     [available, setAvailable] = useState<string[]>([]),
     [prompt, setPrompt] = useState(""),
@@ -327,6 +317,7 @@ export function PlatformPanel({
     [busy, setBusy] = useState(false)
   const [runId, setRunId] = useState("")
   const token = useRef(0)
+  const operationVersion = useRef(0)
   async function api<T>(
     path: string,
     company?: string,
@@ -359,13 +350,15 @@ export function PlatformPanel({
     setContext(body)
   }
   useEffect(() => {
+    if (preview) return
     void requestApi<Status>("status")
       .then(setStatus)
       .catch(() => {})
-    void connect().catch(() => {})
-  }, [])
+  }, [preview])
   const refresh = useCallback(async () => {
     const id = ++token.current
+    operationVersion.current++
+    setBusy(false)
     setError("")
     setAnswer("")
     setRunId("")
@@ -422,6 +415,7 @@ export function PlatformPanel({
   }, [refresh])
   async function perform(operation: () => Promise<void>) {
     const id = token.current
+    const version = ++operationVersion.current
     setBusy(true)
     setError("")
     try {
@@ -429,49 +423,19 @@ export function PlatformPanel({
     } catch (e) {
       if (id === token.current) setError((e as Error).message)
     } finally {
-      setBusy(false)
+      if (id === token.current && version === operationVersion.current)
+        setBusy(false)
     }
   }
   const canRun = !!context && !!status?.ai && available.includes(selected)
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Bot className="size-5" />
-            </span>
-            <span>
-              <span className="block text-sm font-semibold">{companyName}</span>
-              <span className="block text-xs text-muted-foreground">
-                {t("CEO management platform")}
-              </span>
-            </span>
-          </Link>
-          <div className="flex items-center gap-2">
-            {context ? (
-              <span className="hidden text-xs text-muted-foreground sm:block">
-                {context.user}
-              </span>
-            ) : (
-              <Button size="sm" onClick={() => setLogin(true)}>
-                {t("Connect ERPNext")}
-              </Button>
-            )}
-            <Badge variant="outline" className="hidden sm:flex">
-              <ShieldCheck className="size-3" />
-              {t("Human approval required")}
-            </Badge>
-          </div>
-        </div>
+      <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur lg:hidden">
         <PlatformLinks />
       </header>
       <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-7 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="mb-2 text-xs text-muted-foreground">
-              {company || companyName}
-            </p>
             <h1 className="text-2xl font-semibold tracking-tight">
               {t(title)}
             </h1>
@@ -490,9 +454,6 @@ export function PlatformPanel({
             </select>
           )}
         </div>
-        {!context && (
-          <Empty label="Sign in through the CEO dashboard to access company services." />
-        )}
         {error && (
           <div
             role="alert"
@@ -503,7 +464,10 @@ export function PlatformPanel({
         )}
         {mode === "agents" && (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div
+              className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8"
+              aria-label={t("Choose assistant")}
+            >
               {agents.map((agent) => (
                 <button
                   key={agent.id}
@@ -515,24 +479,9 @@ export function PlatformPanel({
                   }}
                   disabled={busy}
                   aria-pressed={selected === agent.id}
-                  className={`rounded-xl border p-4 text-start transition hover:bg-muted/40 ${selected === agent.id ? "border-foreground bg-muted/30" : "bg-card"}`}
+                  className={`rounded-md border px-3 py-2.5 text-start text-sm transition-colors hover:bg-muted/40 ${selected === agent.id ? "border-foreground/30 bg-muted" : "border-transparent"}`}
                 >
-                  <div className="mb-3 flex items-center justify-between">
-                    <Bot className="size-5" />
-                    <Badge variant="outline" className="text-[10px]">
-                      {t(
-                        status?.ai && available.includes(agent.id)
-                          ? "Ready"
-                          : "Awaiting configuration",
-                      )}
-                    </Badge>
-                  </div>
-                  <p className="text-sm font-semibold">
-                    {locale === "ar" ? agent.ar : agent.name}
-                  </p>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    {locale === "ar" ? agent.descriptionAr : agent.description}
-                  </p>
+                  <span>{locale === "ar" ? agent.ar : agent.name}</span>
                 </button>
               ))}
             </div>
@@ -544,15 +493,15 @@ export function PlatformPanel({
                     {locale === "ar" ? active.ar : active.name}
                   </CardTitle>
                   <CardDescription>
-                    {t("Ask your department assistant")}
+                    {locale === "ar"
+                      ? active.descriptionAr
+                      : active.description}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {!canRun && (
-                    <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                      {t(
-                        "This assistant awaits role, source and OpenAI configuration.",
-                      )}
+                    <p className="text-sm text-muted-foreground">
+                      {t("This assistant is not available yet.")}
                     </p>
                   )}
                   {answer && (
@@ -563,6 +512,44 @@ export function PlatformPanel({
                       {answer}
                     </div>
                   )}
+                  {sources.flatMap((source, index) => {
+                    const entry = source as {
+                      kind?: string
+                      type?: string
+                      file?: { name?: string; downloadUrl?: string }
+                    } | null
+                    const file =
+                      entry?.kind === "native-erp" && entry.type === "file"
+                        ? entry.file
+                        : undefined
+                    return file?.name &&
+                      file.downloadUrl?.startsWith("/api/erp/files?")
+                      ? [
+                          <a
+                            key={index}
+                            href={file.downloadUrl}
+                            className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm underline"
+                          >
+                            <FileText className="size-4" />
+                            {file.name}
+                          </a>,
+                        ]
+                      : []
+                  })}
+                  {runId && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setRunId("")
+                        setAnswer("")
+                        setSources([])
+                      }}
+                      disabled={busy}
+                    >
+                      {locale === "ar" ? "سؤال جديد" : "New question"}
+                    </Button>
+                  )}
                   {runId && (
                     <ReadAnswer
                       id={runId}
@@ -571,9 +558,6 @@ export function PlatformPanel({
                       onError={setError}
                     />
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    {t("Review the transcript before sending.")}
-                  </p>
                   {sources.length > 0 && (
                     <details>
                       <summary className="cursor-pointer text-sm">
@@ -600,6 +584,7 @@ export function PlatformPanel({
                           agent: selected,
                           prompt,
                           language: locale,
+                          ...(runId ? { previousRunId: runId } : {}),
                         })
                         if (id === token.current) {
                           setAnswer(result.answer)
@@ -633,19 +618,25 @@ export function PlatformPanel({
                       onChange={(e) => setPrompt(e.target.value)}
                       maxLength={12000}
                       disabled={!canRun || busy}
-                      placeholder={t("Ask a question or request a draft…")}
+                      placeholder={
+                        locale === "ar"
+                          ? "اسأل عن السجلات أو التقارير أو الاعتمادات…"
+                          : "Ask about ERP records, reports or approvals…"
+                      }
                       className="min-h-28 w-full resize-y rounded-md border bg-background p-3 text-sm"
                     />
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                      <VoiceInput
-                        agent={selected}
-                        company={company}
-                        disabled={!canRun || busy || !status?.channels.voice}
-                        onTranscript={(value) =>
-                          setPrompt(value.slice(0, 12000))
-                        }
-                        onError={setError}
-                      />
+                      {status?.channels.voice && (
+                        <VoiceInput
+                          agent={selected}
+                          company={company}
+                          disabled={!canRun || busy || !status?.channels.voice}
+                          onTranscript={(value) =>
+                            setPrompt(value.slice(0, 12000))
+                          }
+                          onError={setError}
+                        />
+                      )}
                       <Button disabled={!canRun || busy || !prompt.trim()}>
                         {busy ? (
                           <LoaderCircle className="animate-spin" />
@@ -673,6 +664,7 @@ export function PlatformPanel({
                     .map((run) => (
                       <button
                         key={run.id}
+                        disabled={busy || run.status !== "completed"}
                         className="block w-full rounded-lg border p-3 text-start text-sm hover:bg-muted/30"
                         onClick={() => {
                           setAnswer(run.response || t(run.status))
@@ -693,11 +685,6 @@ export function PlatformPanel({
         )}
         {mode === "knowledge" && (
           <>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                "Approved document collections only. Access follows your ERP roles.",
-              )}
-            </p>
             <div className="grid gap-6 lg:grid-cols-2">
               <Card>
                 <CardHeader>
@@ -707,6 +694,13 @@ export function PlatformPanel({
                   </CardTitle>
                   <CardDescription>
                     {t("PDF, XLSX, CSV or text · maximum 10 MB")}
+                    {ERP_READ_ONLY && (
+                      <span className="mt-1 block">
+                        {locale === "ar"
+                          ? "رفع المستندات معطل في إصدار القراءة فقط."
+                          : "Document uploads are disabled in this read-only release."}
+                      </span>
+                    )}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -728,6 +722,7 @@ export function PlatformPanel({
                     </label>
                     <select
                       id="collection"
+                      disabled={ERP_READ_ONLY || busy}
                       name="collection"
                       required
                       value={collection}
@@ -745,12 +740,17 @@ export function PlatformPanel({
                     </select>
                     <Input
                       aria-label={t("Choose document")}
+                      disabled={ERP_READ_ONLY || busy}
                       name="file"
                       type="file"
                       required
                       accept=".pdf,.xlsx,.csv,.txt,.md"
                     />
-                    <Button disabled={busy || !collection || !context}>
+                    <Button
+                      disabled={
+                        ERP_READ_ONLY || busy || !collection || !context
+                      }
+                    >
                       <Upload />
                       {t("Upload")}
                     </Button>
@@ -838,6 +838,7 @@ export function PlatformPanel({
                       {doc.status === "failed" && (
                         <Button
                           disabled={
+                            ERP_READ_ONLY ||
                             busy ||
                             !collections.some(
                               (c) => c.id === doc.collection && c.upload,
@@ -867,6 +868,7 @@ export function PlatformPanel({
         {mode === "approvals" && context && (
           <ApprovalInbox key={`${context.user}:${company}`} company={company} />
         )}
+        {mode === "approvals" && preview && <Empty label="No proposals yet." />}
         {mode === "field-updates" && (
           <FieldUpdates key={`${context?.user}:${company}`} context={context} />
         )}
@@ -916,7 +918,7 @@ export function PlatformPanel({
                         : t(n.title)
                     })()}
                   </Link>
-                  {!n.read_at && (
+                  {!ERP_READ_ONLY && !n.read_at && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -938,38 +940,15 @@ export function PlatformPanel({
         {mode === "integrations" && (
           <>
             <InputReadiness key={`inputs:${company}`} company={company} />
-            <MCPSettings key={company} company={company || ""} />
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                {
-                  title: "Read-only sources",
-                  value: status?.modules || 0,
-                  Icon: Database,
-                },
-                { title: "Agents", value: 8, Icon: Bot },
-                {
-                  title: "Human approval required",
-                  value: t("Enabled"),
-                  Icon: ShieldCheck,
-                },
-                {
-                  title: "Staging first",
-                  value: status?.environment || "staging",
-                  Icon: Cable,
-                },
-              ].map((item) => (
-                <Card key={item.title}>
-                  <CardHeader>
-                    <CardDescription>{t(item.title)}</CardDescription>
-                    <CardTitle className="text-2xl">{item.value}</CardTitle>
-                  </CardHeader>
-                </Card>
-              ))}
-            </div>
+            <MCPSettings
+              key={`${context?.user}:${company}`}
+              company={company || ""}
+            />
+            <RolloutReadiness company={company} />
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">
-                  {t("Integration setup")}
+                  {t("ERP discovery")}
                 </CardTitle>
                 <CardDescription>
                   {t(
@@ -978,41 +957,6 @@ export function PlatformPanel({
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {[
-                    "Web portal",
-                    "Email",
-                    "WhatsApp",
-                    "Mobile",
-                    "Voice",
-                    "External systems",
-                  ].map((channel) => (
-                    <div
-                      key={channel}
-                      className="flex items-center justify-between rounded-md border p-3 text-sm"
-                    >
-                      <span>{t(channel)}</span>
-                      <Badge variant="outline">
-                        {t(
-                          channel === "Web portal"
-                            ? "Ready"
-                            : channel === "Email" ||
-                                channel === "WhatsApp" ||
-                                channel === "Voice"
-                              ? status?.channels[
-                                  channel.toLowerCase() as
-                                    | "email"
-                                    | "whatsapp"
-                                    | "voice"
-                                ]
-                                ? "Enabled"
-                                : "Awaiting configuration"
-                              : "Later phase",
-                        )}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
                 <Button
                   disabled={!context || busy}
                   variant="outline"
@@ -1024,6 +968,25 @@ export function PlatformPanel({
                 >
                   {t("View discovery inventory")}
                 </Button>
+                {inventory != null && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const url = URL.createObjectURL(
+                        new Blob([JSON.stringify(inventory, null, 2)], {
+                          type: "application/json",
+                        }),
+                      )
+                      const link = document.createElement("a")
+                      link.href = url
+                      link.download = "ceopanel-discovery.json"
+                      link.click()
+                      setTimeout(() => URL.revokeObjectURL(url), 1000)
+                    }}
+                  >
+                    {t("Download discovery inventory")}
+                  </Button>
+                )}
                 {inventory != null && (
                   <pre
                     dir="ltr"
@@ -1037,12 +1000,6 @@ export function PlatformPanel({
           </>
         )}
       </main>
-      <LoginDialog
-        open={login}
-        onOpenChange={setLogin}
-        siteUrl={siteUrl}
-        onConnected={() => connect()}
-      />
     </div>
   )
 }

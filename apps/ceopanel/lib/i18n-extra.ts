@@ -1,4 +1,144 @@
 export const arabicExtra: Record<string, string> = {
+  "ERP reads work without AI. Review optional assistants, approvals and channels when needed. System Manager access is required.":
+    "تعمل قراءة بيانات ERP دون ذكاء اصطناعي. راجع المساعدين والموافقات والقنوات الاختيارية عند الحاجة. يتطلب ذلك صلاحية مدير النظام.",
+  "This application is read-only. Creating, editing and submitting ERP records is disabled.":
+    "هذا التطبيق للقراءة فقط. إنشاء سجلات ERP وتعديلها وإرسالها معطل.",
+  "Local preview": "معاينة محلية",
+  "Open local preview": "فتح المعاينة المحلية",
+  "Back to sign in": "العودة لتسجيل الدخول",
+  "No data yet": "لا توجد بيانات بعد",
+  "Dashboard data": "بيانات لوحة المعلومات",
+  "This dashboard is not connected yet.": "لم يتم ربط لوحة المعلومات هذه بعد.",
+  "This record type is not connected yet.":
+    "لم يتم ربط هذا النوع من السجلات بعد.",
+  "No custom record types configured.": "لم يتم إعداد أنواع سجلات مخصصة.",
+  "No custom reports configured.": "لم يتم إعداد تقارير مخصصة.",
+  "This assistant is not available yet.": "هذا المساعد غير متاح بعد.",
+  "Choose assistant": "اختيار المساعد",
+  "New update": "تحديث جديد",
+  Records: "السجلات",
+  "ERP discovery": "استكشاف ERP",
+  "Welcome back": "مرحباً بعودتك",
+  "Sign in with your company ERPNext account to continue.":
+    "سجّل الدخول بحساب شركتك في ERPNext للمتابعة.",
+  "Your company. Connected.": "شركتك. متصلة.",
+  "A clearer view of your business.": "رؤية أوضح لأعمالك.",
+  "Insights, people, and operations. One workspace for the decisions that move your company forward.":
+    "الرؤى والموظفون والعمليات. مساحة عمل واحدة للقرارات التي تدفع شركتك إلى الأمام.",
+  "Connected to your existing ERPNext permissions":
+    "متصل بصلاحياتك الحالية في ERPNext",
+  "Use the account provided by your administrator. Your existing ERPNext permissions apply.":
+    "استخدم الحساب الذي يقدمه مسؤول النظام. تُطبَّق صلاحياتك الحالية في ERPNext.",
+  "Your session expired. Sign in again to continue where you left off.":
+    "انتهت جلستك. سجّل الدخول مجدداً للمتابعة من حيث توقفت.",
+  "Signed out of this browser. ERPNext was unreachable; sign out of your ERPNext site to revoke the remote session.":
+    "تم تسجيل الخروج من هذا المتصفح. تعذر الاتصال بـ ERPNext؛ سجّل الخروج من موقع ERPNext لإنهاء الجلسة البعيدة.",
+  "Verifying your company session…": "جارٍ التحقق من جلسة شركتك…",
+  "Your company session could not be verified.": "تعذر التحقق من جلسة شركتك.",
+  "Try again": "حاول مجدداً",
+  "Forgot password?": "نسيت كلمة المرور؟",
+  "Show password": "إظهار كلمة المرور",
+  "Hide password": "إخفاء كلمة المرور",
+  "Signing in…": "جارٍ تسجيل الدخول…",
+  "Verification code": "رمز التحقق",
+  "Verify and sign in": "التحقق وتسجيل الدخول",
+  "Enter the code from your authenticator app.":
+    "أدخل الرمز من تطبيق المصادقة.",
+  "Enter the code sent to your registered phone.":
+    "أدخل الرمز المرسل إلى هاتفك المسجل.",
+  "Check your registered email for your code or authenticator setup instructions.":
+    "تحقق من بريدك المسجل للحصول على الرمز أو تعليمات إعداد المصادقة.",
+  "Use another account or restart sign-in":
+    "استخدام حساب آخر أو إعادة تسجيل الدخول",
+  "Verification expired or the code is invalid. Start sign-in again.":
+    "انتهت صلاحية التحقق أو الرمز غير صحيح. أعد تسجيل الدخول.",
+  "ERPNext could not sign you in. Check your credentials or verification code.":
+    "تعذر تسجيل الدخول إلى ERPNext. تحقق من بياناتك أو رمز التحقق.",
+  "ERPNext is temporarily unavailable. Please try again.":
+    "ERPNext غير متاح مؤقتاً. حاول مجدداً.",
+  "Reset your password on your company ERPNext site before signing in.":
+    "أعد تعيين كلمة المرور على موقع ERPNext لشركتك قبل تسجيل الدخول.",
+  "ERPNext did not verify this session. Please sign in again.":
+    "لم يتحقق ERPNext من هذه الجلسة. سجّل الدخول مجدداً.",
+  Workspace: "مساحة العمل",
+  Teams: "الفرق",
+  Operations: "العمليات",
+  "Main navigation": "التنقل الرئيسي",
+  "Workspace sidebar": "الشريط الجانبي لمساحة العمل",
+  "Open navigation": "فتح قائمة التنقل",
+  "Close navigation": "إغلاق قائمة التنقل",
+  "Collapse sidebar": "طي الشريط الجانبي",
+  "Expand sidebar": "توسيع الشريط الجانبي",
+  Menu: "القائمة",
+  "Sign in as this draft's owner and company before submitting.":
+    "سجل الدخول بحساب مالك المسودة واختر شركتها قبل الإرسال.",
+  "Administrator access required.": "يتطلب هذا الإجراء صلاحية مدير النظام.",
+  "Rollout checklist": "قائمة التحقق من الإطلاق",
+  "Check configuration in order: infrastructure, reads, assistants, approvals, then channels. System Manager access is required.":
+    "تحقق بالترتيب: البنية الأساسية، القراءة، المساعدون، الموافقات، ثم القنوات. يتطلب ذلك صلاحية مدير النظام.",
+  "Check rollout configuration": "التحقق من إعدادات الإطلاق",
+  "Checking configuration…": "جارٍ التحقق من الإعدادات…",
+  "Unable to check rollout configuration.": "تعذر التحقق من إعدادات الإطلاق.",
+  "Configuration checks do not replace live ERP, KPI, AI and delivery acceptance tests.":
+    "فحص الإعدادات لا يغني عن اختبارات القبول الفعلية لنظام ERP والمؤشرات والذكاء الاصطناعي وتسليم الرسائل.",
+  Configured: "تم الإعداد",
+  "Needs configuration": "يتطلب الإعداد",
+  Disabled: "معطل",
+  "Download discovery inventory": "تنزيل بيانات الاستكشاف",
+  "Private platform configuration": "إعدادات المنصة الخاصة",
+  "ERP origin": "عنوان نظام ERP",
+  "Exact ERP Company": "اسم الشركة المطابق في ERP",
+  "PostgreSQL configuration": "إعداد PostgreSQL",
+  "Redis configuration": "إعداد Redis",
+  "ERP execution receipt secret": "المفتاح السري لإيصالات التنفيذ",
+  "Verified record schemas": "مخططات السجلات المعتمدة",
+  "Verified ERP reports": "تقارير ERP المعتمدة",
+  "Dashboard report mappings": "ربط تقارير لوحات المعلومات",
+  "Agent roles and sources": "أدوار المساعدين ومصادرهم",
+  "Approved AI configuration": "إعداد الذكاء الاصطناعي المعتمد",
+  "Approved knowledge collections": "مجموعات المعرفة المعتمدة",
+  "Mapped human approvers": "المعتمدون المخولون",
+  "Public portal origin": "العنوان العام للبوابة",
+  "External MCP authentication": "مصادقة MCP الخارجية",
+  "ERP email delivery": "إرسال البريد من ERP",
+  "WhatsApp delivery configuration": "إعداد إرسال واتساب",
+  "Voice models": "نماذج الصوت",
+  "Set PLATFORM_CONFIG_PATH to the reviewed private configuration file.":
+    "حدد ملف الإعدادات الخاصة الذي تمت مراجعته في PLATFORM_CONFIG_PATH.",
+  "Set ERPNEXT_URL to the actual ERP origin. The setup placeholder cannot connect.":
+    "حدد عنوان ERP الفعلي في ERPNEXT_URL. العنوان المؤقت لا يسمح بالاتصال.",
+  "Set ERPNEXT_COMPANY to the exact Company document name from ERPNext.":
+    "حدد اسم سجل الشركة المطابق في ERPNEXT_COMPANY.",
+  "Set DATABASE_URL or the PostgreSQL PGHOST/PGUSER/PGDATABASE settings; apply migrations next.":
+    "حدد DATABASE_URL أو إعدادات PostgreSQL ثم طبق تحديثات قاعدة البيانات.",
+  "Set REDIS_URL for document jobs and worker maintenance.":
+    "حدد REDIS_URL لمعالجة المستندات وصيانة المهام.",
+  "Set a secret of at least 32 characters and configure the same secret privately on the ERP bridge.":
+    "حدد مفتاحاً سرياً من 32 حرفاً على الأقل واستخدم المفتاح نفسه في إعدادات جسر ERP الخاصة.",
+  "Verify enabled record schemas, company scope and allowed/denied users in staging.":
+    "تحقق في بيئة الاختبار من مخططات السجلات ونطاق الشركة والمستخدمين المسموح لهم والممنوعين.",
+  "Confirm enabled report filters, currencies, completeness and native total rows.":
+    "تحقق من مرشحات التقارير والعملات واكتمال النتائج وصفوف الإجمالي الأصلية.",
+  "Compare every enabled dashboard KPI with the native ERP report.":
+    "قارن كل مؤشر مفعل في لوحة المعلومات بتقرير ERP الأصلي.",
+  "Assign actual roles and enabled AI fields to agents, then evaluate company scenarios.":
+    "اربط الأدوار الفعلية والحقول المعتمدة بالمساعدين ثم اختبر سيناريوهات الشركة.",
+  "Set server-side model credentials and approve the mapped fields before enabling AI.":
+    "حدد بيانات اعتماد النموذج على الخادم واعتمد الحقول المرتبطة قبل تفعيل الذكاء الاصطناعي.",
+  "Approve collection roles/content and configure the embedding model before document ingestion.":
+    "اعتمد أدوار المجموعات ومحتواها وحدد نموذج التضمين قبل معالجة المستندات.",
+  "Every enabled write module needs an assigned agent, actual roles and individual approver usernames.":
+    "تحتاج كل وحدة كتابة مفعلة إلى مساعد وأدوار فعلية وأسماء المستخدمين المخولين بالاعتماد.",
+  "Set CEOPANEL_ORIGIN to the deployed HTTPS origin before activating remote clients or signed callbacks.":
+    "حدد عنوان HTTPS المنشور في CEOPANEL_ORIGIN قبل تفعيل العملاء الخارجيين أو إشعارات الاستدعاء الموقعة.",
+  "Set a 64-hex-character MCP_AUTH_SECRET and approve AI data before external MCP activation.":
+    "حدد MCP_AUTH_SECRET من 64 رمزاً بالنظام الست عشري واعتمد بيانات الذكاء الاصطناعي قبل تفعيل MCP الخارجي.",
+  "Map verified ERP recipient fields, native email configuration and send roles; test approved delivery.":
+    "اربط حقول المستلمين المعتمدة وإعدادات البريد وأدوار الإرسال ثم اختبر التسليم بعد الموافقة.",
+  "Configure the Business API, signed callbacks and verified ERP recipient fields; test delivery.":
+    "أعد واجهة حساب الأعمال والإشعارات الموقعة وحقول المستلمين المعتمدة ثم اختبر التسليم.",
+  "Configure transcription and speech models, then evaluate Arabic/English audio on supported devices.":
+    "حدد نماذج التفريغ والنطق ثم اختبر الصوت بالعربية والإنجليزية على الأجهزة المدعومة.",
   "Choose document": "اختيار مستند",
   "Field updates": "تحديثات الميدان",
   "Field photos": "صور الميدان",

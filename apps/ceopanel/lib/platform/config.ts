@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { Field } from "../workspace"
 import { agents } from "./catalog"
 import { dashboards } from "../dashboards"
+import { nativeReadEnabled } from "../erp-native/read-policy"
 
 const field: z.ZodType<Field> = z.lazy(() =>
   z.object({
@@ -262,9 +263,18 @@ export function parseConfig(input: unknown) {
     throw new Error("Channel identity requires a configured agent")
   return config
 }
+let cachedConfig:
+  | { path: string | undefined; value: PlatformConfig }
+  | undefined
 export function platformConfig(): PlatformConfig {
   const path = process.env.PLATFORM_CONFIG_PATH
-  return parseConfig(path ? JSON.parse(readFileSync(path, "utf8")) : {})
+  if (cachedConfig && cachedConfig.path === path) return cachedConfig.value
+  const value = parseConfig(path ? JSON.parse(readFileSync(path, "utf8")) : {})
+  // Catalogs and adapters are initialized at startup. Keep their permissions and
+  // mappings consistent instead of synchronously rereading JSON in every tool call.
+  // As documented, mapping changes require a web/worker restart.
+  cachedConfig = { path, value }
+  return value
 }
 export function capabilities() {
   const config = platformConfig()
@@ -274,7 +284,7 @@ export function capabilities() {
     ai:
       !!process.env.OPENAI_API_KEY &&
       !!process.env.OPENAI_MODEL &&
-      config.aiDataApproved,
+      aiDataApproved(),
     embeddings:
       !!process.env.OPENAI_EMBEDDING_MODEL &&
       !!process.env.OPENAI_API_KEY &&
@@ -282,4 +292,7 @@ export function capabilities() {
     environment: config.environment,
     channels: config.channels,
   }
+}
+export function aiDataApproved() {
+  return platformConfig().aiDataApproved || nativeReadEnabled()
 }

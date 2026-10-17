@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { ERPNextError } from "@/lib/erpnext-client"
-import { humanTool } from "@/lib/mcp/client"
+import { humanTool } from "@/lib/mcp/human-tool"
 
 export const dynamic = "force-dynamic"
 export async function GET(request: Request) {

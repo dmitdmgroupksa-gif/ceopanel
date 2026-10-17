@@ -1,0 +1,81 @@
+name: CEO Panel validation
+
+on:
+  pull_request:
+    paths:
+      - "apps/ceopanel/**"
+      - "apps/ceopanel-mobile/**"
+      - "integrations/frappe/**"
+      - ".github/workflows/ceopanel.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/ceopanel/**"
+      - "apps/ceopanel-mobile/**"
+      - "integrations/frappe/**"
+      - ".github/workflows/ceopanel.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: apps/ceopanel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/ceopanel/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: npm ci --workspaces=false
+      - run: npm audit --omit=dev --audit-level=high --workspaces=false
+      - run: npm run typecheck
+      - run: npx tsc --noEmit --noUnusedLocals --noUnusedParameters
+      - run: npm test
+      - name: EC2 configuration safety checks
+        run: bash deploy/test-configure-ec2.sh
+      - name: Disposable database, approval and MCP scenarios
+        run: npm run test:integration
+      - name: Native bridge regressions
+        run: python -m unittest discover -s integrations/frappe/tests -v
+        working-directory: .
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Desktop, mobile and Arabic browser scenarios
+        run: npm run test:browser
+        env:
+          CEOPANEL_TEST_PRODUCTION: "true"
+      - name: Encrypted backup regressions
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age
+          bash test-backup.sh
+        working-directory: apps/ceopanel/deploy
+      - name: Disposable database and private-file restore
+        run: npm run test:backup
+
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/ceopanel-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/ceopanel-mobile/package-lock.json
+      - run: npm ci --workspaces=false
+      - run: npm run typecheck
+      - run: npm run export

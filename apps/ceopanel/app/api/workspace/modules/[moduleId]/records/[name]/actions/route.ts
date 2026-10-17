@@ -1,4 +1,5 @@
-import { humanTool } from "@/lib/mcp/client"
+import { humanTool } from "@/lib/mcp/human-tool"
+import { denyERPWrite } from "@/lib/erp-access"
 import {
   queryCompany,
   workspaceBody,
@@ -11,6 +12,7 @@ export async function POST(
   context: { params: Promise<{ moduleId: string; name: string }> },
 ) {
   try {
+    denyERPWrite()
     const body = await workspaceBody(request)
     const { moduleId, name } = await context.params
     return workspaceResponse(

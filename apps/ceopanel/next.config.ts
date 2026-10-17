@@ -6,7 +6,8 @@ const root = path.dirname(fileURLToPath(import.meta.url))
 const config: NextConfig = {
   output: "standalone",
   devIndicators: false,
-  serverExternalPackages: ["bullmq", "pg", "pdf-parse", "exceljs"],
+  serverExternalPackages: ["bullmq", "pg", "pdf-parse", "exceljs", "pdfkit"],
+  outputFileTracingIncludes: { "/api/**/*": ["./lib/erp-native/fonts/*.ttf"] },
   outputFileTracingRoot: root,
   turbopack: { root },
   async headers() {

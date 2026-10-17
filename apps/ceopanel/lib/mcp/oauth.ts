@@ -4,7 +4,9 @@ import { cookies } from "next/headers"
 import { z } from "zod"
 import { database, transaction } from "../platform/db"
 import { identity, agentAccess } from "../platform/auth"
-import { platformConfig } from "../platform/config"
+import { aiDataApproved } from "../platform/config"
+import { nativeReadAccess } from "../erp-native/read-policy"
+import { ERP_READ_ONLY } from "../erp-access"
 import { agents, type AgentId } from "../platform/catalog"
 import { SESSION_COOKIE } from "../erpnext-server"
 import { ERPNextError } from "../erpnext-client"
@@ -18,6 +20,7 @@ import {
   unseal,
 } from "./crypto"
 const readScope = "ceopanel:read",
+  erpScope = "ceopanel:erp-read",
   proposalScope = "ceopanel:propose"
 const authInput = z.object({
   response_type: z.literal("code"),
@@ -26,7 +29,7 @@ const authInput = z.object({
   code_challenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   code_challenge_method: z.literal("S256"),
   resource: z.string().url(),
-  scope: z.string().max(300).default(readScope),
+  scope: z.string().max(300).default(`${readScope} ${erpScope}`),
   state: z.string().max(2048).optional(),
 })
 async function authorization(query: string) {
@@ -38,7 +41,8 @@ async function authorization(query: string) {
   if (
     !scopes.includes(readScope) ||
     scopes.some(
-      (s) => ![readScope, proposalScope, "offline_access"].includes(s),
+      (s) =>
+        ![readScope, erpScope, proposalScope, "offline_access"].includes(s),
     )
   )
     throw new ERPNextError("Unsupported MCP scope.", 400)
@@ -121,7 +125,8 @@ export async function consentPreview(query: string, company?: string) {
     },
     context,
     agents: permitted.map(({ id, name, ar }) => ({ id, name, ar })),
-    canPropose: scopes.includes(proposalScope),
+    canPropose: !ERP_READ_ONLY && scopes.includes(proposalScope),
+    erpRead: scopes.includes(erpScope),
   }
 }
 export async function authorizeClient(
@@ -138,13 +143,20 @@ export async function authorizeClient(
     redirect.searchParams.set("error", "access_denied")
     return { redirect: redirect.href }
   }
-  if (!platformConfig().aiDataApproved)
+  if (!aiDataApproved())
     throw new ERPNextError("AI data processing awaits company approval.", 409)
   const context = await identity(company)
   agentAccess(context, agent)
+  if (requested.includes(erpScope) && !nativeReadAccess(context))
+    throw new ERPNextError(
+      "ERP-wide reading is not enabled for your account.",
+      403,
+    )
   const sid = (await cookies()).get(SESSION_COOKIE)?.value
   if (!sid) throw new ERPNextError("Sign in to ERPNext again.", 401)
-  const scopes = requested.filter((s) => s !== proposalScope || allowProposals),
+  const scopes = requested.filter(
+      (s) => s !== proposalScope || (!ERP_READ_ONLY && allowProposals),
+    ),
     grant = randomUUID()
   const claims = {
     grant,
@@ -230,7 +242,7 @@ async function validateGrant(claims: Record<string, any>) {
   if (context.user !== parsed.user)
     throw new ERPNextError("ERP identity changed. Sign in again.", 401)
   agentAccess(context, parsed.agent)
-  if (!platformConfig().aiDataApproved)
+  if (!aiDataApproved())
     throw new ERPNextError("AI data approval was withdrawn.", 403)
   return { claims: parsed, grant, context }
 }
@@ -363,7 +375,12 @@ export function authorizationMetadata() {
     grant_types_supported: ["authorization_code", "refresh_token"],
     token_endpoint_auth_methods_supported: ["none"],
     code_challenge_methods_supported: ["S256"],
-    scopes_supported: [readScope, proposalScope, "offline_access"],
+    scopes_supported: [
+      readScope,
+      erpScope,
+      ...(!ERP_READ_ONLY ? [proposalScope] : []),
+      "offline_access",
+    ],
   }
 }
 export function resourceMetadata() {
@@ -371,7 +388,11 @@ export function resourceMetadata() {
   return {
     resource: `${origin}/api/mcp`,
     authorization_servers: [origin],
-    scopes_supported: [readScope, proposalScope],
+    scopes_supported: [
+      readScope,
+      erpScope,
+      ...(!ERP_READ_ONLY ? [proposalScope] : []),
+    ],
     bearer_methods_supported: ["header"],
   }
 }

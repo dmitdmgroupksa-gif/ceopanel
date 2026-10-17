@@ -1,4 +1,4 @@
-import { humanTool } from "@/lib/mcp/client"
+import { humanTool } from "@/lib/mcp/human-tool"
 import {
   queryCompany,
   workspaceBody,

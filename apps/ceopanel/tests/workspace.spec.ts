@@ -1,10 +1,11 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 import {
   pendingSchema,
   standardModules,
   type ModuleSchema,
   type WorkspaceRecord,
 } from "../lib/workspace"
+import { nativeModule } from "../lib/erp-native/catalog"
 
 test("all company record modules and custom sections are prepared without live writes", async ({
   page,
@@ -18,34 +19,33 @@ test("all company record modules and custom sections are prepared without live w
       mutations.push(request.url())
   })
   await page.route("**/api/workspace/modules/*?**", (route) => {
-    const module = standardModules.find((item) =>
-      route.request().url().includes(`/modules/${item.id}?`)
-    )!
+    const id = new URL(route.request().url()).pathname.split("/").pop()!
+    const module =
+      nativeModule(id)?.module ??
+      standardModules.find((item) => item.id === id)!
     return route.fulfill({ json: pendingSchema(module) })
   })
   await page.goto("/workspace")
   await expect(
-    page.getByRole("heading", { name: "Company ERP workspace" })
+    page.getByRole("heading", { name: "ERP workspace" }),
   ).toBeVisible()
   for (const module of standardModules) {
     await page.getByLabel("Choose record type").selectOption(module.id)
     await expect(
-      page.getByText(module.title, { exact: true }).last()
+      page.getByText(module.title, { exact: true }).last(),
     ).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "New record", exact: true })
-    ).toBeDisabled()
+      page.getByRole("button", { name: "New record", exact: true }),
+    ).toHaveCount(0)
   }
   await page.getByRole("tab", { name: "Custom DocTypes", exact: true }).click()
   await expect(
-    page.getByText("Ready for your custom DocType names and API definitions.")
-  ).toBeVisible()
+    page
+      .getByLabel("Choose record type")
+      .getByRole("option", { name: "Facilities", exact: true }),
+  ).toHaveCount(1)
   await page.getByRole("tab", { name: "Custom reports", exact: true }).click()
-  await expect(
-    page.getByText(
-      "Ready for your custom report names, filters, and data sources."
-    )
-  ).toBeVisible()
+  await expect(page.getByText("No custom reports configured.")).toBeVisible()
   await page.screenshot({
     path: `../../.codex-artifacts/ceopanel/${info.project.name}-workspace-reports.png`,
     fullPage: true,
@@ -58,31 +58,25 @@ test("all company record modules and custom sections are prepared without live w
   expect(width[0]).toBeLessThanOrEqual(width[1])
 })
 
-test("a configured API can browse, create with custom fields, edit, and submit records", async ({
+test("records stay read-only even when ERP schema advertises every write permission", async ({
   page,
 }) => {
+  const mutations: string[] = []
+  page.on("request", (request) => {
+    if (request.url().includes("/api/workspace/") && request.method() !== "GET")
+      mutations.push(request.method())
+  })
   const schema: ModuleSchema = {
     ...pendingSchema(standardModules[0]),
     ready: true,
     submittable: true,
     fields: [
-      {
-        name: "customer_name",
-        label: "Customer name",
-        type: "text",
-        required: true,
-      },
-      {
-        name: "custom_tier",
-        label: "Customer tier",
-        type: "select",
-        options: ["Gold", "Silver"],
-      },
+      { name: "customer_name", label: "Customer name", type: "text" },
       {
         name: "contacts",
         label: "Contacts",
         type: "table",
-        fields: [{ name: "contact_name", label: "Contact name", type: "text" }],
+        fields: [{ name: "full_name", label: "Contact name", type: "text" }],
       },
     ],
     columns: [
@@ -96,114 +90,49 @@ test("a configured API can browse, create with custom fields, edit, and submit r
       submit: true,
       cancel: true,
     },
+    workflowActions: ["Approve"],
   }
-  const records: WorkspaceRecord[] = [
-    {
-      name: "CUSTOMER-1",
-      modified: "2026-10-14T09:00:00",
-      docstatus: 0,
-      values: {
-        customer_name: "First customer",
-        custom_tier: "Silver",
-        contacts: [],
-      },
+  const record: WorkspaceRecord = {
+    name: "CUSTOMER-1",
+    modified: "2026-10-15 10:00:00",
+    docstatus: 0,
+    values: {
+      customer_name: "First customer",
+      contacts: [{ full_name: "Contact A" }],
     },
-  ]
-  let created: unknown
-  let edited: unknown
-  let submitted = false
-  await page.route("**/api/erpnext/session", (route) =>
-    route.fulfill({ json: { ok: true } })
-  )
-  await page.route("**/api/erpnext/context**", (route) =>
-    route.fulfill({
-      json: {
-        user: "test@example.com",
-        company: "Company A",
-        currency: "SAR",
-        companies: [{ name: "Company A", default_currency: "SAR" }],
-        siteUrl: "https://dmgroup.frappe.cloud",
-      },
-    })
-  )
+    workflowActions: ["Approve"],
+  }
   await page.route("**/api/workspace/modules/customers**", (route) => {
-    const request = route.request()
-    const path = new URL(request.url()).pathname
-    if (path.endsWith("/actions")) {
-      submitted = true
-      records[0].docstatus = 1
-      return route.fulfill({ json: records[0] })
-    }
-    if (path.endsWith("/records") && request.method() === "POST") {
-      created = request.postDataJSON()
-      records.push({
-        name: "CUSTOMER-2",
-        modified: "2026-10-14T10:00:00",
-        docstatus: 0,
-        values: request.postDataJSON().values,
-      })
-      return route.fulfill({ status: 201, json: records[1] })
-    }
-    if (path.endsWith("/records"))
-      return route.fulfill({ json: { records, hasMore: false } })
-    if (path.endsWith("/CUSTOMER-1")) {
-      if (request.method() === "PUT") {
-        edited = request.postDataJSON()
-        records[0].values = {
-          ...records[0].values,
-          ...request.postDataJSON().values,
-        }
-      }
-      return route.fulfill({ json: records[0] })
-    }
-    return route.fulfill({ json: schema })
+    const path = new URL(route.request().url()).pathname
+    return route.fulfill({
+      json: path.endsWith("/records")
+        ? { records: [record], hasMore: false }
+        : path.endsWith("/CUSTOMER-1")
+          ? record
+          : schema,
+    })
   })
   await page.goto("/workspace")
-  await page
-    .getByRole("button", { name: "Connect ERPNext", exact: true })
-    .click()
-  await page.getByLabel("ERPNext email or username").fill("test@example.com")
-  await page.getByLabel("Password", { exact: true }).fill("not-real")
-  await page
-    .getByRole("button", { name: "Sign in to ERPNext", exact: true })
-    .click()
   await expect(
-    page.getByRole("button", { name: "New record", exact: true })
-  ).toBeEnabled()
-  await page.getByRole("button", { name: "New record", exact: true }).click()
-  await page.getByLabel("Customer name", { exact: false }).fill("New customer")
-  await page.getByLabel("Customer tier").selectOption("Gold")
-  await page.getByRole("button", { name: "Add row", exact: true }).click()
-  await page.getByLabel("Contact name").fill("Contact A")
-  await page.getByRole("button", { name: "Create record", exact: true }).click()
-  await expect(
-    page.getByRole("cell", { name: "New customer", exact: true })
+    page.getByRole("button", { name: "CUSTOMER-1", exact: true }),
   ).toBeVisible()
-  expect(created).toMatchObject({
-    values: {
-      customer_name: "New customer",
-      custom_tier: "Gold",
-      contacts: [{ contact_name: "Contact A" }],
-    },
-  })
-  await page.getByRole("button", { name: "CUSTOMER-1", exact: true }).click()
-  await page
-    .getByLabel("Customer name", { exact: false })
-    .fill("Updated customer")
-  await page.getByRole("button", { name: "Save changes", exact: true }).click()
   await expect(
-    page.getByRole("cell", { name: "Updated customer", exact: true })
-  ).toBeVisible()
-  expect(edited).toMatchObject({
-    modified: "2026-10-14T09:00:00",
-    values: { customer_name: "Updated customer" },
-  })
+    page.getByRole("button", { name: "New record", exact: true }),
+  ).toHaveCount(0)
   await page.getByRole("button", { name: "CUSTOMER-1", exact: true }).click()
-  await page.getByRole("button", { name: "Submit", exact: true }).click()
-  expect(submitted).toBe(false)
-  await page
-    .getByRole("button", { name: "Confirm submit", exact: true })
-    .click()
-  await expect(page.getByRole("dialog")).toHaveCount(0)
-  expect(submitted).toBe(true)
+  await expect(page.getByLabel("Customer name", { exact: true })).toBeDisabled()
+  await expect(page.getByLabel("Contact name", { exact: true })).toBeDisabled()
+  await expect(
+    page.getByRole("button", { name: "Add row", exact: true }),
+  ).toBeDisabled()
+  for (const name of [
+    "Create record",
+    "Save changes",
+    "Submit",
+    "Cancel document",
+    "Approve",
+  ])
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0)
+  await page.getByRole("button", { name: "Close", exact: true }).first().click()
+  expect(mutations).toEqual([])
 })

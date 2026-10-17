@@ -1,4 +1,6 @@
 import { arabicExtra } from "./i18n-extra"
+import { arabicOperations } from "./i18n-operations"
+import { arabicExplorer } from "./i18n-explorer"
 export const arabic: Record<string, string> = {
   Inbox: "صندوق الوارد",
   "Approval requested": "طُلبت الموافقة",
@@ -206,4 +208,6 @@ export const arabic: Record<string, string> = {
   "Payment Entries": "قيود الدفع",
   "Journal Entries": "القيود اليومية",
   ...arabicExtra,
+  ...arabicOperations,
+  ...arabicExplorer,
 }

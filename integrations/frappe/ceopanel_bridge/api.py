@@ -283,7 +283,12 @@ def dashboard(dashboard, company, period):
     # Installed report must explicitly produce the CEO DashboardData contract;
     # its company KPI definitions are supplied and validated during discovery.
     from frappe.desk.query_report import run
-    output = run(m["report"], filters={"company": company, **frappe.parse_json(period)})
+    period = frappe.parse_json(period)
+    if not isinstance(period, dict):
+        frappe.throw("Invalid dashboard period")
+    if "company" in period and period["company"] != company:
+        frappe.throw("Dashboard company mismatch", frappe.PermissionError)
+    output = run(m["report"], filters={**period, "company": company}, are_default_filters=False, ignore_prepared_report=True)
     data = output.get("ceopanel_dashboard")
     if not data or data.get("company") != company or data.get("dashboardId") != dashboard:
         frappe.throw("Report must return validated ceopanel_dashboard data")
@@ -375,9 +380,24 @@ def discovery():
     from frappe.utils.change_log import get_versions
     workflows = frappe.get_list("Workflow", filters={"is_active": 1}, fields=["name", "document_type", "workflow_state_field"], page_length=1000)
     schemas = {}
+    def discover_fields(doctype, seen=()):
+        if doctype in seen or len(seen) >= 5:
+            return []
+        meta = frappe.get_meta(doctype)
+        output = []
+        for f in meta.fields:
+            field = {"name": f.fieldname, "label": f.label, "type": f.fieldtype, "options": f.options, "required": f.reqd, "readOnly": f.read_only, "permlevel": f.permlevel, "allowOnSubmit": f.allow_on_submit}
+            if f.fieldtype == "Table" and f.options:
+                field["fields"] = discover_fields(f.options, seen + (doctype,))
+            output.append(field)
+        return output
     for m in config().get("modules", []):
-        meta = frappe.get_meta(m["doctype"])
-        schemas[m["id"]] = {"doctype": m["doctype"], "fields": [{"name": f.fieldname, "label": f.label, "type": f.fieldtype, "options": f.options, "required": f.reqd, "readOnly": f.read_only, "permlevel": f.permlevel} for f in meta.fields], "permissions": meta.permissions}
+        try:
+            meta = frappe.get_meta(m["doctype"])
+            schemas[m["id"]] = {"doctype": m["doctype"], "state": "available", "fields": discover_fields(m["doctype"]), "permissions": meta.permissions}
+        except frappe.DoesNotExistError:
+            # Optional HR/custom apps may be absent; discover the other modules anyway.
+            schemas[m["id"]] = {"doctype": m["doctype"], "state": "missing_doctype", "fields": []}
     return {"versions": get_versions(), "companies": frappe.get_list("Company", fields=["name", "default_currency"]), "schemas": schemas, "customDocTypes": frappe.get_list("DocType", filters={"custom": 1}, fields=["name", "module"], page_length=1000), "reports": frappe.get_list("Report", fields=["name", "ref_doctype", "report_type"], page_length=1000), "workflows": [{**w, "states": frappe.get_doc("Workflow", w.name).states, "transitions": frappe.get_doc("Workflow", w.name).transitions} for w in workflows]}
 
 

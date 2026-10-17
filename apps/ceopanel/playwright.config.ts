@@ -3,6 +3,7 @@ const port = Number(process.env.CEOPANEL_TEST_PORT || 3107)
 
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: ["**/local-preview.spec.ts"],
   fullyParallel: true,
   workers: 3,
   timeout: 60000,
@@ -27,8 +28,17 @@ export default defineConfig({
   webServer: process.env.CEOPANEL_TEST_BASE_URL
     ? undefined
     : {
-        command: `npx next dev --webpack --port ${port}`,
+        command:
+          process.env.CEOPANEL_TEST_PRODUCTION === "true"
+            ? "npm run start"
+            : `npx next dev --webpack --port ${port}`,
         url: `http://localhost:${port}/agents`,
+        env: {
+          PORT: String(port),
+          HOSTNAME: "0.0.0.0",
+          CEOPANEL_DISABLE_AUTH: "false",
+          MCP_EXTERNAL_ENABLED: "false",
+        },
         reuseExistingServer: false,
         timeout: 120000,
       },

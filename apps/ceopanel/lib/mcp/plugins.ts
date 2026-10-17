@@ -17,6 +17,7 @@ import { loadDashboard } from "../dashboard-server"
 import { loadSnapshot } from "../erpnext-server"
 import { platformPlugin } from "./platform-services"
 import { externalPlugin } from "./external-plugin"
+import { erpReadPlugin } from "./erp-plugin"
 const id = z.string().min(1).max(140),
   uuid = z.uuid(),
   values = z.record(z.string(), z.unknown())
@@ -34,6 +35,7 @@ const agentTool = (
   run: (scope, args) => agentService(scope, name, args),
 })
 export const businessPlugins: BusinessPlugin[] = [
+  erpReadPlugin,
   platformPlugin,
   externalPlugin,
   {

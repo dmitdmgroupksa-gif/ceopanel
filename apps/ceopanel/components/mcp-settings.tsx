@@ -1,5 +1,6 @@
 "use client"
-import { useCallback, useEffect, useState } from "react"
+import { sessionFetch as fetch } from "@/lib/session-fetch"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "./ui/button"
 import {
   Card,
@@ -23,8 +24,11 @@ export function MCPSettings({ company }: { company: string }) {
   const [grants, setGrants] = useState<Grant[]>([]),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false)
+  const generation = useRef(0)
+  const pendingLoad = useRef(0)
   const load = useCallback(
     async (signal?: AbortSignal) => {
+      const request = ++pendingLoad.current
       setGrants([])
       setMessage("")
       if (!company) return
@@ -35,9 +39,9 @@ export function MCPSettings({ company }: { company: string }) {
         )
         const data = await response.json()
         if (!response.ok) throw new Error(data.error_description)
-        setGrants(data)
+        if (!signal?.aborted && request === pendingLoad.current) setGrants(data)
       } catch (e) {
-        if (!signal?.aborted)
+        if (!signal?.aborted && request === pendingLoad.current)
           setMessage(e instanceof Error ? e.message : "MCP unavailable.")
       }
     },
@@ -45,10 +49,17 @@ export function MCPSettings({ company }: { company: string }) {
   )
   useEffect(() => {
     const controller = new AbortController()
+    generation.current++
+    setBusy(false)
     void load(controller.signal)
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      generation.current++
+      pendingLoad.current++
+    }
   }, [load])
   async function revoke(id: string) {
+    const version = generation.current
     setBusy(true)
     try {
       const response = await fetch("/api/mcp/oauth/revoke-owned", {
@@ -57,12 +68,14 @@ export function MCPSettings({ company }: { company: string }) {
         body: JSON.stringify({ id, company }),
       })
       const data = await response.json()
+      if (version !== generation.current) return
       if (!response.ok) throw new Error(data.error_description)
       await load()
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Unable to revoke access.")
+      if (version === generation.current)
+        setMessage(e instanceof Error ? e.message : "Unable to revoke access.")
     } finally {
-      setBusy(false)
+      if (version === generation.current) setBusy(false)
     }
   }
   return (

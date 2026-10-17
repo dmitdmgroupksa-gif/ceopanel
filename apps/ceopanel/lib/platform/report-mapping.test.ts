@@ -70,4 +70,15 @@ describe("validated report dashboard mapping", () => {
       ),
     ).toThrow("metric definitions")
   })
+  it("refuses arithmetic overflow rather than publishing a null JSON total", () => {
+    expect(() =>
+      dashboardFromReport(dashboards[0], context, period, mapping, {
+        ...report,
+        rows: [
+          { value: 1e308, month: "October" },
+          { value: 1e308, month: "October" },
+        ],
+      }),
+    ).toThrow("supported range")
+  })
 })

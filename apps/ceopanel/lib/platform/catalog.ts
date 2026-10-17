@@ -5,8 +5,7 @@ export const agents = [
     ar: "المبيعات",
     department: "Sales",
     modules: ["customers", "leads", "quotations", "sales-orders"],
-    description:
-      "Customer insights, quotations, orders and follow-up proposals.",
+    description: "Customer insights, quotations, orders and follow-up reports.",
     descriptionAr: "رؤى العملاء وعروض الأسعار والطلبات ومقترحات المتابعة.",
   },
   {
@@ -25,7 +24,7 @@ export const agents = [
     ar: "المخزون",
     department: "Inventory",
     modules: ["items", "stock"],
-    description: "Warehouse visibility, shortages and stock proposals.",
+    description: "Stock levels, warehouse movements and shortages.",
     descriptionAr: "متابعة المستودعات والنواقص ومقترحات المخزون.",
   },
   {
@@ -34,7 +33,7 @@ export const agents = [
     ar: "المشتريات",
     department: "Procurement",
     modules: ["purchase-orders"],
-    description: "Supplier purchasing insights and purchase-order drafts.",
+    description: "Supplier purchasing insights, orders and approval status.",
     descriptionAr: "رؤى مشتريات الموردين ومسودات أوامر الشراء.",
   },
   {
@@ -43,7 +42,7 @@ export const agents = [
     ar: "الخدمات اللوجستية",
     department: "Logistics",
     modules: ["delivery-notes"],
-    description: "Deliveries, dispatch summaries and assignment proposals.",
+    description: "Deliveries, dispatch summaries and approval status.",
     descriptionAr: "عمليات التسليم وملخصات الإرسال ومقترحات التعيين.",
   },
   {
@@ -62,7 +61,7 @@ export const agents = [
     ar: "المرافق",
     department: "Facilities",
     modules: [],
-    description: "Maintenance and work orders from verified custom DocTypes.",
+    description: "Maintenance and work orders from permitted ERP records.",
     descriptionAr: "الصيانة وأوامر العمل من أنواع المستندات المخصصة المعتمدة.",
   },
   {

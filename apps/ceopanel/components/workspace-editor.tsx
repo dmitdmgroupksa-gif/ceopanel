@@ -1,4 +1,5 @@
 "use client"
+import { sessionFetch as fetch } from "@/lib/session-fetch"
 import { useLocale } from "./locale-provider"
 import { useEffect, useState } from "react"
 import { LoaderCircle } from "lucide-react"
@@ -12,8 +13,8 @@ import {
 } from "@/components/ui/dialog"
 import { WorkspaceFields } from "./workspace-fields"
 import { editableValues } from "@/lib/workspace"
+import { readOnlySchema } from "@/lib/erp-access"
 import type {
-  Field,
   ModuleSchema,
   RecordValues,
   WorkspaceRecord,
@@ -34,7 +35,8 @@ export function WorkspaceEditor({
   company?: string
   onSaved: () => Promise<void>
 }) {
-  const { t, locale } = useLocale()
+  schema = readOnlySchema(schema)
+  const { t } = useLocale()
   const submitted = record?.docstatus === 1
   const fields = schema.fields.map((field) => ({
     ...field,

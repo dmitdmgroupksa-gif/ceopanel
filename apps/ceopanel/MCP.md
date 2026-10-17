@@ -15,22 +15,25 @@ they do not turn queued AI suggestions into autonomous ERP writes.
 
 ## AI tools
 
-`list_sources`, `describe_module`, `read_records`, `read_record`, `read_report`,
-`search_knowledge`, and `propose_action` are the AI surface. Custom DocTypes and reports use
-the existing explicit verified adapters; they do not need a second API implementation.
-`list_sources` discovers assigned IDs. Only approved scalar fields reach AI tools or proposal
-payloads. Use validated ERP reports for totals, never sums from paginated lists.
+`list_sources`, `describe_module`, `read_records`, `read_record`, `read_report` and
+`search_knowledge` are the assigned-source AI tools when their sources are configured.
+`list_sources` discovers mapped IDs, not every native ERP source. The separate nine
+`erp_*` tools discover and read standard/custom business DocTypes, native reports,
+workflows and files under explicit ERP-wide consent; see [ERP-ASSISTANT.md](ERP-ASSISTANT.md).
+Use native reports for totals, never sums from paginated record lists.
 
 AI clients cannot discover or invoke human workspace writes, document uploads, voice sessions,
-approval/rejection, reconciliation, or access administration. A proposal has no ERP effect until
-a permitted person reviews it in the dashboard. The server checks native ERP permissions,
-company, current document version, and workflow immediately before execution under that
-approver's ERP identity. Tool annotations describe behavior; authorization is enforced in code.
+approval/rejection, reconciliation, or access administration. Proposal and business-write
+tools are disabled in the current read-only release. The deferred proposal engine does
+not enable them. Tool annotations describe behavior; authorization is enforced in code.
 
 ## External client activation
 
-1. Apply migration `004` with `npm run db:migrate`. Deploy matching web/worker and native
-   Frappe bridge versions together. Confirm staging mappings and approved AI data first.
+1. Apply all platform migrations with `npm run db:migrate`. PostgreSQL stores OAuth
+   registrations, consent and tool audits. The native `erp_*` read tools require
+   approved ERP reading (`ERP_AI_READ_ENABLED` and `ERP_AI_READ_ROLES`) and native
+   account permissions; they do not require the Frappe bridge, a model key or Redis.
+   Bridge/knowledge/background features have separate prerequisites.
 2. Set the public HTTPS `CEOPANEL_ORIGIN`, `MCP_EXTERNAL_ENABLED=true`, and a random
    32-byte `MCP_AUTH_SECRET` encoded as 64 hex characters. Generate it locally with
    `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` and put it
@@ -40,9 +43,10 @@ approver's ERP identity. Tool annotations describe behavior; authorization is en
    and resource metadata at `/.well-known/oauth-protected-resource/api/mcp`.
 4. A compatible client registers its exact callback URL, uses authorization code + PKCE S256
    and the resource `https://YOUR-PORTAL/api/mcp`, then opens the consent page. The user signs
-   in with ERPNext and chooses one company and agent. Read access is required; preparing
-   proposals is optional. The client receives its own opaque bearer token.
-5. Test discovery, a permitted read, a denied source, a proposal if enabled, and revocation
+   in with ERPNext and chooses one company and agent. For native business reading,
+   authorize `ceopanel:read ceopanel:erp-read`. Proposal and write tools remain disabled
+   in this read-only release. The client receives its own opaque bearer token.
+5. Test discovery, a permitted read, a denied source, exports, expiry and revocation
    before enabling production. Validate each intended Codex/Claude client version; the automated
    suite verifies SDK protocol interoperability, not those desktop applications themselves.
 
@@ -79,6 +83,9 @@ registry, then testing permission failures and idempotency. There is no generic 
 arbitrary URL fetch, raw Frappe method, or executable plugin upload tool.
 
 ## Verification
+
+See [MCP showcase review](MCP-SHOWCASE-REVIEW.md) for the latest tool/response fixes,
+live native-tool rehearsal and the remaining ChatGPT acceptance step.
 
 `npm test` includes cryptographic/origin checks. Set `PLATFORM_TEST_DATABASE_URL` to a
 disposable PostgreSQL/pgvector database to include the real MCP SDK transport, PKCE/code

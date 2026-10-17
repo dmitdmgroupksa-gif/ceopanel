@@ -8,7 +8,8 @@ import { platformConfig } from "./config"
 import { jobQueue } from "./queue"
 import { ERPNextError } from "../erpnext-client"
 import { redactRestrictedText } from "./privacy"
-export const maxUpload = 10 * 1024 * 1024
+import { maxUpload } from "../upload-limits"
+export { maxUpload } from "../upload-limits"
 export function privatePath(id: string) {
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid document identity")
   return path.join(

@@ -1,5 +1,6 @@
-import { humanTool } from "@/lib/mcp/client"
+import { humanTool } from "@/lib/mcp/human-tool"
 import { workspaceAdapters, workspaceSchema } from "@/lib/workspace-server"
+import { nativeModule } from "@/lib/erp-native/catalog"
 import {
   queryCompany,
   workspaceError,
@@ -13,7 +14,7 @@ export async function GET(
   try {
     const { moduleId } = await context.params
     return workspaceResponse(
-      Object.hasOwn(workspaceAdapters, moduleId)
+      Object.hasOwn(workspaceAdapters, moduleId) && !nativeModule(moduleId)
         ? await humanTool(queryCompany(request), "workspace_schema", {
             module: moduleId,
           })

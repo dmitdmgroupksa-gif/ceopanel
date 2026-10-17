@@ -1,17 +1,18 @@
 "use client"
 import { useLocale } from "./locale-provider"
-import { useEffect, useState } from "react"
-import { BarChart3, Download, Search } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Download, Search } from "lucide-react"
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -43,19 +44,40 @@ function formatMetric(metric: MetricValue, currency: string, locale: string) {
     return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
-      maximumFractionDigits: 0,
+      maximumFractionDigits: 2,
     }).format(metric.value)
   if (metric.format === "percent")
-    return `${metric.value.toLocaleString(locale)}%`
+    return `${metric.value.toLocaleString(locale, { maximumFractionDigits: 2 })}%`
   return metric.value.toLocaleString(locale)
+}
+function recordHref(value: string | undefined, siteUrl: string | undefined) {
+  if (!value || !siteUrl) return undefined
+  try {
+    const url = new URL(value)
+    return ["https:", "http:"].includes(url.protocol) &&
+      url.origin === new URL(siteUrl).origin &&
+      !url.username &&
+      !url.password &&
+      url.pathname.startsWith("/app/")
+      ? url.href
+      : undefined
+  } catch {
+    return undefined
+  }
 }
 
 export function DashboardPanel({
   definition,
   data,
+  loading = false,
+  failed = false,
+  siteUrl,
 }: {
   definition: DashboardDefinition
   data: DashboardData
+  loading?: boolean
+  failed?: boolean
+  siteUrl?: string
 }) {
   const { t, locale } = useLocale()
   const ready = data.status === "ready"
@@ -65,56 +87,79 @@ export function DashboardPanel({
     setSearch("")
     setPage(0)
   }, [definition.id, data.company])
-  const rows = data.table.rows.filter((row) =>
-    data.table.columns.some((column) =>
-      String(row[column.key] ?? "")
-        .toLowerCase()
-        .includes(search.trim().toLowerCase()),
-    ),
-  )
+  useEffect(() => {
+    setPage(0)
+  }, [data.period.from, data.period.to])
+  const rows = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return data.table.rows
+    return data.table.rows.filter((row) =>
+      data.table.columns.some((column) =>
+        String(row[column.key] ?? "")
+          .toLowerCase()
+          .includes(query),
+      ),
+    )
+  }, [data.table.rows, data.table.columns, search])
   const totalPages = Math.max(1, Math.ceil(rows.length / 10))
   const currentPage = Math.min(page, totalPages - 1)
   const exportRows = () =>
     downloadCSV(`${definition.id}-${data.period.to}.csv`, [
-      [data.company, definition.title, data.period.from, data.period.to],
+      [
+        data.scope === "erp-account" ? "ERP account scope" : data.company,
+        definition.title,
+        data.period.from,
+        data.period.to,
+      ],
+      ...(data.note ? [[data.note]] : []),
+      ...(search.trim() ? [["Search", search.trim()]] : []),
       data.table.columns.map((column) => column.label),
       ...rows.map((row) =>
         data.table.columns.map((column) => row[column.key] ?? ""),
       ),
     ])
+  if (!ready && failed) return null
+  if (!ready)
+    return (
+      <section
+        className="rounded-lg border px-6 py-20 text-center"
+        aria-label={t("Dashboard data")}
+      >
+        <h2 className="text-sm font-medium">
+          {t(loading ? "Loading dashboard…" : "No data yet")}
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {!loading && t("This dashboard is not connected yet.")}
+        </p>
+      </section>
+    )
   return (
     <div className="space-y-6">
+      {data.note && (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {t(data.note)}
+        </p>
+      )}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {data.metrics.map((metric) => (
-          <Card
-            key={metric.label}
-            className="gap-3 bg-gradient-to-t from-muted/40 to-card shadow-xs"
-          >
+          <Card key={metric.label} className="gap-3 shadow-none">
             <CardHeader className="gap-3">
               <CardDescription>{t(metric.label)}</CardDescription>
               <CardTitle className="text-3xl font-semibold tabular-nums">
                 {formatMetric(metric, data.currency, locale)}
               </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {ready ? metric.note || "Company data" : t("Awaiting data")}
-              </p>
+              {metric.note && (
+                <p className="text-xs text-muted-foreground">
+                  {t(metric.note)}
+                </p>
+              )}
             </CardHeader>
           </Card>
         ))}
       </div>
       <Card className="gap-4">
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <div className="space-y-1.5">
-            <CardTitle>{t(data.chart.title)}</CardTitle>
-            <CardDescription>
-              {ready
-                ? t("Performance in the selected reporting period")
-                : t("Your dashboard chart will appear here")}
-            </CardDescription>
-          </div>
-          <Badge variant="outline" className="font-normal">
-            {ready ? t("Connected") : t("Data source pending")}
-          </Badge>
+          <CardTitle>{t(data.chart.title)}</CardTitle>
         </CardHeader>
         <CardContent>
           {ready && data.chart.points.length > 0 ? (
@@ -124,52 +169,86 @@ export function DashboardPanel({
                 height="100%"
                 initialDimension={{ width: 800, height: 256 }}
               >
-                <AreaChart data={data.chart.points}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} />
-                  <Tooltip
-                    contentStyle={{
-                      background: "var(--card)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8,
-                    }}
-                  />
-                  {data.chart.series.map((series, index) => (
-                    <Area
-                      key={series.key}
-                      dataKey={series.key}
-                      name={series.label}
-                      stroke={
-                        index ? "var(--muted-foreground)" : "var(--foreground)"
-                      }
-                      fill="var(--foreground)"
-                      fillOpacity={index ? 0.04 : 0.1}
-                      isAnimationActive={false}
+                {data.chart.type === "bar" ? (
+                  <BarChart
+                    data={data.chart.points}
+                    layout="vertical"
+                    margin={{ left: 0, right: 12 }}
+                  >
+                    <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      allowDecimals={false}
+                      tickLine={false}
+                      axisLine={false}
                     />
-                  ))}
-                </AreaChart>
+                    <YAxis
+                      type="category"
+                      dataKey="label"
+                      width={140}
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(value) => {
+                        const label = t(String(value))
+                        return label.length > 22
+                          ? `${label.slice(0, 21)}…`
+                          : label
+                      }}
+                    />
+                    <Tooltip
+                      labelFormatter={(label) => t(String(label))}
+                      contentStyle={{
+                        background: "var(--card)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                      }}
+                    />
+                    {data.chart.series.map((series) => (
+                      <Bar
+                        key={series.key}
+                        dataKey={series.key}
+                        name={t(series.label)}
+                        fill="var(--foreground)"
+                        radius={[0, 3, 3, 0]}
+                        isAnimationActive={false}
+                      />
+                    ))}
+                  </BarChart>
+                ) : (
+                  <AreaChart data={data.chart.points}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                    <YAxis tickLine={false} axisLine={false} />
+                    <Tooltip
+                      contentStyle={{
+                        background: "var(--card)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                      }}
+                    />
+                    {data.chart.series.map((series, index) => (
+                      <Area
+                        key={series.key}
+                        dataKey={series.key}
+                        name={series.label}
+                        stroke={
+                          index
+                            ? "var(--muted-foreground)"
+                            : "var(--foreground)"
+                        }
+                        fill="var(--foreground)"
+                        fillOpacity={index ? 0.04 : 0.1}
+                        isAnimationActive={false}
+                      />
+                    ))}
+                  </AreaChart>
+                )}
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="flex h-60 flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-muted/20 text-center">
-              <span className="flex size-11 items-center justify-center rounded-xl border bg-background">
-                <BarChart3 className="size-5 text-muted-foreground" />
-              </span>
-              <p className="text-sm font-medium">
-                {ready
-                  ? t("No chart data in this period")
-                  : t("Ready for your company data")}
-              </p>
-              <p className="max-w-sm px-4 text-xs leading-relaxed text-muted-foreground">
-                {ready
-                  ? t(
-                      "Choose another reporting period to review more activity.",
-                    )
-                  : t(
-                      "The source and calculations will be connected when you share how this dashboard gets its data.",
-                    )}
-              </p>
+            <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+              {t("No chart data in this period")}
             </div>
           )}
         </CardContent>
@@ -177,13 +256,9 @@ export function DashboardPanel({
       <Card className="gap-0 overflow-hidden">
         <CardHeader className="flex flex-col justify-between gap-4 pb-5 md:flex-row md:items-center">
           <div className="space-y-1.5">
-            <CardTitle>
-              {t(definition.title)} {t("records")}
-            </CardTitle>
+            <CardTitle>{t("Records")}</CardTitle>
             <CardDescription>
-              {ready
-                ? `${rows.length} records in this view`
-                : t("Record layout prepared · data setup pending")}
+              {rows.length.toLocaleString(locale)} {t("records")}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -194,7 +269,6 @@ export function DashboardPanel({
                 placeholder={t("Search records…")}
                 className="h-9 pl-8 md:w-48"
                 value={search}
-                disabled={!ready}
                 onChange={(event) => {
                   setSearch(event.target.value)
                   setPage(0)
@@ -204,7 +278,7 @@ export function DashboardPanel({
             <Button
               size="sm"
               variant="outline"
-              disabled={!ready || rows.length === 0}
+              disabled={rows.length === 0}
               onClick={exportRows}
             >
               <Download />
@@ -224,30 +298,40 @@ export function DashboardPanel({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {ready &&
-                rows
-                  .slice(currentPage * 10, (currentPage + 1) * 10)
-                  .map((row) => (
-                    <TableRow key={row.id}>
-                      {data.table.columns.map((column) => (
-                        <TableCell key={column.key} className="py-4 first:pl-6">
-                          {row[column.key] ?? "—"}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
+              {rows
+                .slice(currentPage * 10, (currentPage + 1) * 10)
+                .map((row) => (
+                  <TableRow key={row.id}>
+                    {data.table.columns.map((column, index) => (
+                      <TableCell key={column.key} className="py-4 first:pl-6">
+                        {index === 0 &&
+                        recordHref(data.table.links?.[row.id], siteUrl) ? (
+                          <a
+                            href={recordHref(
+                              data.table.links?.[row.id],
+                              siteUrl,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium underline-offset-4 hover:underline focus-visible:underline"
+                          >
+                            {row[column.key] ?? "—"}
+                          </a>
+                        ) : (
+                          (row[column.key] ?? "—")
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
             </TableBody>
           </Table>
-          {(!ready || rows.length === 0) && (
+          {rows.length === 0 && (
             <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-              {ready
-                ? t("No records in this view.")
-                : t(
-                    "Awaiting your data source. No company records have been loaded for this dashboard.",
-                  )}
+              {t("No records in this view.")}
             </div>
           )}
-          {ready && rows.length > 10 && (
+          {rows.length > 10 && (
             <div className="flex items-center justify-between border-t px-6 py-3 text-xs text-muted-foreground">
               <span>
                 {t("Page")} {currentPage + 1} {t("of")} {totalPages}

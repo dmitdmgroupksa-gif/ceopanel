@@ -1,5 +1,5 @@
 import { randomUUID, createHmac, createHash } from "node:crypto"
-import { readFile, rm, mkdtemp } from "node:fs/promises"
+import { readFile, writeFile, rm, mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -12,7 +12,30 @@ import {
   vi,
 } from "vitest"
 vi.mock("server-only", () => ({}))
+// Exercise the deferred approval/bridge engine against its in-memory ERP stub.
+// Only this isolated test module simulates a future write-enabled rollout.
+// erp-access.test.ts verifies the real production read-only boundary without it.
+vi.mock("../erp-access", () => ({
+  ERP_READ_ONLY: false,
+  denyERPWrite: vi.fn(),
+  readOnlySchema: (schema: unknown) => schema,
+}))
+vi.mock("../erp-native/catalog", () => ({
+  nativeModules: [],
+  nativeModule: () => undefined,
+}))
+vi.mock("../erp-native/workspace", () => ({ nativeWorkspace: () => ({}) }))
+vi.mock("../erp-native/dashboards", () => ({
+  nativeDashboardIds: [],
+  isNativeDashboard: () => false,
+  nativeDashboard: vi.fn(),
+}))
 const bridge = vi.hoisted(() => vi.fn())
+const native = vi.hoisted(() => ({
+  canRead: vi.fn(),
+  request: vi.fn(),
+  binary: vi.fn(),
+}))
 const responses = vi.hoisted(() => vi.fn())
 vi.mock("openai", () => ({
   default: class {
@@ -21,7 +44,7 @@ vi.mock("openai", () => ({
   },
 }))
 vi.mock("../erpnext-server", () => ({
-  client: async () => ({ bridge }),
+  client: async () => ({ bridge, ...native }),
   siteUrl: () => "https://example.frappe.cloud",
   timezone: "Asia/Riyadh",
   SESSION_COOKIE: "ceopanel_erpnext_sid",
@@ -77,6 +100,7 @@ const cfg = vi.hoisted(() => ({
 }))
 vi.mock("./config", () => ({
   platformConfig: () => cfg,
+  aiDataApproved: () => cfg.aiDataApproved,
   capabilities: () => ({ ai: true }),
 }))
 import {
@@ -105,7 +129,10 @@ import { runAgent } from "./agents"
 import { agents } from "./catalog"
 import { searchKnowledge, upload, privatePath } from "./knowledge"
 import { permittedEvidence } from "./evidence"
+import { migrations } from "./migrations"
 import { receiveWhatsApp, sendWhatsApp } from "./channels"
+import { receiveERPEvent, eventId } from "./events"
+import { attachment } from "./field-inputs"
 import type { UserContext } from "./auth"
 const user: UserContext = {
   user: "sales@example.com",
@@ -147,33 +174,37 @@ function receipt(
   }
 }
 describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
+  it("installs the indexes used by permission-scoped lists and quotas", async () => {
+    const names = (
+      await database().query(
+        "SELECT indexname FROM pg_indexes WHERE schemaname='public'",
+      )
+    ).rows.map((row) => row.indexname)
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "audit_actor_company_event_time",
+        "notifications_owner_time",
+        "channel_inbox_owner_time",
+        "proposal_attachments_proposal",
+        "knowledge_documents_catalog",
+        "knowledge_documents_pending",
+        "mcp_clients_registration_time",
+      ]),
+    )
+  })
   beforeAll(async () => {
     vi.stubEnv("OPENAI_MODEL", "fixture-model")
     vi.stubEnv("OPENAI_EMBEDDING_MODEL", "test-embedding")
     vi.stubEnv("OPENAI_API_KEY", "test-only-not-an-api-key")
     vi.stubEnv("ERPNEXT_RECEIPT_SECRET", "test-receipt-secret")
     process.env.DATABASE_URL = process.env.PLATFORM_TEST_DATABASE_URL
-    await database().query(
-      await readFile(
-        new URL("../../db/001-platform.sql", import.meta.url),
-        "utf8",
-      ),
-    )
-    await database().query(
-      await readFile(
-        new URL("../../db/002-channels.sql", import.meta.url),
-        "utf8",
-      ),
-    )
-    await database().query(
-      await readFile(
-        new URL("../../db/003-field-inputs.sql", import.meta.url),
-        "utf8",
-      ),
-    )
-    await database().query(
-      await readFile(new URL("../../db/004-mcp.sql", import.meta.url), "utf8"),
-    )
+    for (const migration of migrations)
+      await database().query(
+        await readFile(
+          new URL(`../../db/${migration.file}`, import.meta.url),
+          "utf8",
+        ),
+      )
   })
   beforeEach(() => {
     identityFixture.mockReset()
@@ -266,6 +297,60 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
       ])
     await database().end()
     vi.unstubAllEnvs()
+  })
+  it("rolls back ERP event deduplication when freshness persistence fails, then accepts a retry once", async () => {
+    const body = JSON.stringify({
+      doctype: "Customer",
+      name: randomUUID(),
+      modified: "2026-10-15 10:00:00",
+    })
+    const id = eventId(body)
+    const fixture = "ceopanel_test_" + randomUUID().replaceAll("-", "")
+    await database().query(
+      `CREATE FUNCTION ${fixture}() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'fixture freshness failure'; END$$`,
+    )
+    try {
+      await database().query(
+        `CREATE TRIGGER ${fixture} BEFORE INSERT OR UPDATE ON sync_state FOR EACH ROW EXECUTE FUNCTION ${fixture}()`,
+      )
+      try {
+        await expect(receiveERPEvent(body)).rejects.toThrow(
+          "fixture freshness failure",
+        )
+        expect(
+          (
+            await database().query("SELECT id FROM event_inbox WHERE id=$1", [
+              id,
+            ])
+          ).rowCount,
+        ).toBe(0)
+      } finally {
+        await database().query(
+          `DROP TRIGGER IF EXISTS ${fixture} ON sync_state`,
+        )
+      }
+      await receiveERPEvent(body)
+      const freshness = (
+        await database().query(
+          "SELECT last_event_at FROM sync_state WHERE source='erpnext'",
+        )
+      ).rows[0].last_event_at
+      await receiveERPEvent(body)
+      expect(
+        (await database().query("SELECT id FROM event_inbox WHERE id=$1", [id]))
+          .rowCount,
+      ).toBe(1)
+      expect(
+        (
+          await database().query(
+            "SELECT last_event_at FROM sync_state WHERE source='erpnext'",
+          )
+        ).rows[0].last_event_at,
+      ).toEqual(freshness)
+    } finally {
+      await database().query(`DROP FUNCTION ${fixture}()`)
+      await database().query("DELETE FROM event_inbox WHERE id=$1", [id])
+    }
   })
   it("enforces approvers and company isolation, then prevents duplicate execution", async () => {
     const p = await propose(user, "sales", {
@@ -667,6 +752,55 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
       ])
     }
   })
+  it("rechecks native source permissions before downloading a proposal photo by its saved ID", async () => {
+    const storage = await mkdtemp(
+      path.join(tmpdir(), "ceopanel-attachment-test-"),
+    )
+    const previousStorage = process.env.DOCUMENT_STORAGE_PATH
+    vi.stubEnv("DOCUMENT_STORAGE_PATH", storage)
+    const id = randomUUID(),
+      bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+    try {
+      await writeFile(privatePath(id), bytes)
+      await propose(
+        user,
+        "sales",
+        {
+          kind: "create",
+          module: "customers",
+          values: { customer_name: "Photo proposal" },
+        },
+        [],
+        undefined,
+        [
+          {
+            id,
+            filename: "site.png",
+            mime: "image/png",
+            checksum: createHash("sha256").update(bytes).digest("hex"),
+          },
+        ],
+      )
+      expect(
+        Buffer.from(await (await attachment(user, id)).arrayBuffer()),
+      ).toEqual(bytes)
+      bridge.mockResolvedValue([])
+      await expect(attachment(user, id)).rejects.toMatchObject({
+        status: 403,
+        message: "Attachment access denied.",
+      })
+    } finally {
+      if (
+        path.dirname(path.resolve(storage)) !== path.resolve(tmpdir()) ||
+        !path.basename(storage).startsWith("ceopanel-attachment-test-")
+      )
+        throw new Error("Unsafe test cleanup path")
+      await rm(storage, { recursive: true, force: true })
+      if (previousStorage === undefined)
+        delete process.env.DOCUMENT_STORAGE_PATH
+      else process.env.DOCUMENT_STORAGE_PATH = previousStorage
+    }
+  })
   it("deduplicates concurrent knowledge uploads without orphaning private files", async () => {
     const storage = await mkdtemp(path.join(tmpdir(), "ceopanel-upload-test-"))
     vi.stubEnv("DOCUMENT_STORAGE_PATH", storage)
@@ -703,7 +837,7 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
     }
   })
   it("sums all model calls, redacts saved prompts, and forces a final answer at the tool limit", async () => {
-    for (let step = 0; step < 5; step++)
+    for (let step = 0; step < 11; step++)
       responses.mockResolvedValueOnce({
         output: [
           {
@@ -727,9 +861,9 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
       "en",
     )
     expect(run.usage).toEqual({
-      input_tokens: 46,
-      output_tokens: 19,
-      total_tokens: 65,
+      input_tokens: 88,
+      output_tokens: 37,
+      total_tokens: 125,
     })
     expect(responses.mock.calls.at(-1)![0].tool_choice).toBe("none")
     expect(JSON.stringify(responses.mock.calls)).not.toContain(
@@ -744,9 +878,12 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
     ).not.toContain("do-not-store-this")
   })
   for (const agent of agents) {
-    it(`${agent.name} reads approved fields and produces a human-reviewed draft`, async () => {
+    it(`${agent.name} reads approved fields and cannot prepare ERP changes`, async () => {
       cfg.agents[agent.id] = { ...cfg.agents.sales }
       const context = { ...user, user: `${agent.id}@example.com` }
+      const previousProposals = (await listProposals(context))
+        .map((row) => row.id)
+        .sort()
       responses
         .mockResolvedValueOnce({
           output: [
@@ -777,7 +914,7 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
         .mockResolvedValueOnce({
           output: [],
           output_text:
-            "Draft ready for manager review. Source: Customer TEST-CUSTOMER v2.",
+            "Read completed. Changes are disabled. Source: Customer TEST-CUSTOMER v2.",
           usage: { input_tokens: 10, output_tokens: 10 },
         })
       const result = await runAgent(
@@ -786,7 +923,7 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
         "Prepare a permitted draft",
         "en",
       )
-      expect(result.answer).toContain("manager review")
+      expect(result.answer).toContain("Changes are disabled")
       expect(JSON.stringify(result.evidence)).not.toContain(
         "must-not-reach-model",
       )
@@ -796,10 +933,8 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
         ),
       ).toBe(false)
       expect(
-        (await listProposals(context)).some(
-          (row) => row.agent === agent.id && row.status === "pending",
-        ),
-      ).toBe(true)
+        (await listProposals(context)).map((row) => row.id).sort(),
+      ).toEqual(previousProposals)
     })
     it(`${agent.name} cannot invoke an unassigned payroll tool`, async () => {
       cfg.agents[agent.id] = { ...cfg.agents.sales }
@@ -830,7 +965,56 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
       ).toBe(false)
     })
   }
-  async function oauthFixture(allowProposals = true) {
+  it("reuses a permitted prior answer for a follow-up and rejects another owner's run", async () => {
+    const context = { ...user, user: "follow-up@example.com" }
+    responses
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "read_records",
+            arguments: JSON.stringify({ module: "customers", search: "" }),
+            call_id: "first",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: "Customer TEST-CUSTOMER found.",
+      })
+    const first = await runAgent(context, "sales", "Find the customer", "en")
+    responses.mockClear()
+    responses.mockResolvedValueOnce({
+      output: [],
+      output_text: "Checked the referenced customer.",
+    })
+    await runAgent(context, "sales", "Check that record", "en", first.id)
+    const input = responses.mock.calls[0][0].input
+    expect(input[0]).toMatchObject({
+      role: "user",
+      content: "Find the customer",
+    })
+    expect(input[1].content).toContain("TEST-CUSTOMER")
+    expect(input[2]).toMatchObject({
+      role: "user",
+      content: "Check that record",
+    })
+    responses.mockClear()
+    await expect(
+      runAgent(
+        { ...context, user: "another-reader@example.com" },
+        "sales",
+        "Check that record",
+        "en",
+        first.id,
+      ),
+    ).rejects.toMatchObject({ status: 409 })
+    expect(responses).not.toHaveBeenCalled()
+  })
+  async function oauthFixture(
+    allowProposals = true,
+    requestedScope = "ceopanel:read ceopanel:propose",
+  ) {
     vi.stubEnv("CEOPANEL_ORIGIN", "https://panel.example")
     vi.stubEnv("MCP_EXTERNAL_ENABLED", "true")
     vi.stubEnv("MCP_AUTH_SECRET", "ab".repeat(32))
@@ -844,7 +1028,7 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
       client_id: client.client_id,
       redirect_uri: client.redirect_uris[0],
       resource: "https://panel.example/api/mcp",
-      scope: "ceopanel:read ceopanel:propose",
+      scope: requestedScope,
       code_challenge: pkceChallenge(verifier),
       code_challenge_method: "S256",
       state: "bound-state",
@@ -869,6 +1053,73 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
     }
     return { client, exchange, query }
   }
+  it("requires a separate ERP-wide OAuth consent and delivers files through an audited external resource read", async () => {
+    vi.stubEnv("ERP_AI_READ_ENABLED", "true")
+    vi.stubEnv("ERP_AI_READ_ROLES", "Sales User")
+    native.canRead.mockResolvedValue(true)
+    native.request.mockImplementation(async (raw: string) => {
+      if (raw.includes("getdoctype"))
+        return {
+          docs: [
+            {
+              name: "Quotation",
+              module: "Selling",
+              fields: [{ fieldname: "grand_total", fieldtype: "Currency" }],
+            },
+          ],
+        }
+      if (raw.includes("has_permission"))
+        return { message: { has_permission: true } }
+      return { message: { doctype: "Quotation", name: "Q-1", grand_total: 10 } }
+    })
+    native.binary.mockResolvedValue(Buffer.from("%PDF-1.7 fixture"))
+    const { exchange } = await oauthFixture(
+        false,
+        "ceopanel:read ceopanel:erp-read",
+      ),
+      token = await exchangeToken(exchange)
+    expect(token.scope).toContain("ceopanel:erp-read")
+    const external = new Client({ name: "native-files", version: "1" })
+    await external.connect(
+      new StreamableHTTPClientTransport(new URL(exchange.resource), {
+        requestInit: {
+          headers: { Authorization: `Bearer ${token.access_token}` },
+        },
+        fetch: async (url, init) => serveMcp(new Request(url, init)),
+      }),
+    )
+    try {
+      expect((await external.listTools()).tools.map((t) => t.name)).toContain(
+        "erp_export_file",
+      )
+      const file = await external.callTool({
+        name: "erp_export_file",
+        arguments: {
+          request: { kind: "document", doctype: "Quotation", name: "Q-1" },
+          delivery: "link",
+        },
+      })
+      const link = file.content.find((c) => c.type === "resource_link")!
+      expect(link.type).toBe("resource_link")
+      const contents = await external.readResource({ uri: link.uri })
+      expect(contents.contents[0]).toMatchObject({
+        mimeType: "application/pdf",
+        blob: Buffer.from("%PDF-1.7 fixture").toString("base64"),
+      })
+      expect(
+        (
+          await database().query(
+            "SELECT count(*)::int AS n FROM mcp_tool_calls WHERE owner=$1 AND tool='erp_export_file' AND status='completed' AND grant_id IS NOT NULL",
+            [user.user],
+          )
+        ).rows[0].n,
+      ).toBeGreaterThanOrEqual(2)
+    } finally {
+      await external.close()
+      vi.stubEnv("ERP_AI_READ_ENABLED", "false")
+      vi.stubEnv("ERP_AI_READ_ROLES", "System Manager")
+    }
+  })
   it("discovers actual MCP tools and cannot expose human approvals or arbitrary identity arguments", async () => {
     const tools = await connectBusinessTools({
       context: user,
@@ -924,7 +1175,7 @@ describe.skipIf(!enabled)("isolated PostgreSQL approval lifecycle", () => {
     } finally {
       await tools.close()
     }
-    vi.stubEnv("MCP_DISABLED_PLUGINS", "erp,proposals")
+    vi.stubEnv("MCP_DISABLED_PLUGINS", " erp, proposals ")
     const disabled = await connectBusinessTools({
       context: user,
       principal: "agent",

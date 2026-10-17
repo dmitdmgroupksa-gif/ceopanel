@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-test("external consent is explicit, company-scoped and bilingual", async ({
+test("external ERP-wide consent is explicit, read-only and bilingual", async ({
   page,
 }) => {
   let company = "Durar",
@@ -21,7 +21,8 @@ test("external consent is explicit, company-scoped and bilingual", async ({
         agents: [
           { id: "executive", name: "Executive", ar: "الإدارة التنفيذية" },
         ],
-        canPropose: true,
+        canPropose: false,
+        erpRead: true,
       },
     })
   })
@@ -31,7 +32,12 @@ test("external consent is explicit, company-scoped and bilingual", async ({
   })
   await page.goto("/mcp/authorize?client_id=fixture")
   await expect(page.getByText("External CEO assistant")).toBeVisible()
-  await expect(page.getByRole("checkbox")).not.toBeChecked()
+  await expect(page.getByRole("checkbox")).toHaveCount(0)
+  await expect(
+    page.getByText("including other companies your account can access", {
+      exact: false,
+    }),
+  ).toBeVisible()
   await expect(
     page.getByText("This application cannot approve or execute changes.", {
       exact: false,
@@ -43,7 +49,6 @@ test("external consent is explicit, company-scoped and bilingual", async ({
   await expect(page.getByLabel("Company", { exact: true })).toHaveValue(
     "Other company",
   )
-  await page.getByRole("checkbox").check()
   await page.getByRole("button", { name: "Change language" }).click()
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl")
   const width = await page.evaluate(() => ({
@@ -60,7 +65,7 @@ test("external consent is explicit, company-scoped and bilingual", async ({
       query: "client_id=fixture",
       company: "Other company",
       agent: "executive",
-      allowProposals: true,
+      allowProposals: false,
       decision: "allow",
     })
 })
@@ -70,4 +75,27 @@ test("unconfigured external MCP stays unavailable", async ({ request }) => {
   })
   expect(response.status()).toBe(503)
   expect((await response.json()).error).toContain("awaits")
+})
+
+test("consent outages offer retry without treating an unavailable server as a sign-in failure", async ({
+  page,
+}) => {
+  await page.route("**/api/mcp/oauth/consent?**", (route) =>
+    route.fulfill({
+      status: 503,
+      json: { error_description: "The consent service is unavailable." },
+    }),
+  )
+  await page.goto("/mcp/authorize?client_id=fixture")
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "The consent service is unavailable." }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Try again", exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Sign in to ERPNext", exact: true }),
+  ).toHaveCount(0)
 })

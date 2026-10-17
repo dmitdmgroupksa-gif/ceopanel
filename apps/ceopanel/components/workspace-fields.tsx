@@ -25,7 +25,7 @@ export function WorkspaceFields({
   company?: string
   pathPrefix?: string
 }) {
-  const { t, locale } = useLocale()
+  const { t } = useLocale()
   const update = (name: string, value: FieldValue) =>
     onChange({ ...values, [name]: value })
   return (
@@ -118,7 +118,7 @@ export function WorkspaceFields({
                   id={id}
                   type="checkbox"
                   className="size-4"
-                  checked={!!value}
+                  checked={value === true || value === 1 || value === "1"}
                   disabled={readOnly}
                   onChange={(event) => update(field.name, event.target.checked)}
                 />
@@ -136,10 +136,16 @@ export function WorkspaceFields({
                   {t("Choose")} {t(field.label)}
                 </option>
                 {field.options?.map((option) => (
-                  <option key={t(option)} value={t(option)}>
+                  <option key={option} value={option}>
                     {t(option)}
                   </option>
                 ))}
+                {readOnly &&
+                  typeof value === "string" &&
+                  value &&
+                  !field.options?.includes(value) && (
+                    <option value={value}>{t(value)}</option>
+                  )}
               </select>
             ) : field.type === "textarea" ? (
               <textarea
@@ -169,7 +175,7 @@ export function WorkspaceFields({
                 type={
                   field.type === "number"
                     ? "number"
-                    : field.type === "date"
+                    : field.type === "date" && !readOnly
                       ? "date"
                       : "text"
                 }

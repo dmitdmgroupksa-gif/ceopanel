@@ -1,4 +1,5 @@
 "use client"
+import { sessionFetch as fetch } from "@/lib/session-fetch"
 import { useEffect, useState } from "react"
 import { Input } from "./ui/input"
 export function ERPLinkField({
@@ -33,7 +34,10 @@ export function ERPLinkField({
           signal: controller.signal,
         })
           .then(async (response) => {
-            if (response.ok) setNames(await response.json())
+            if (response.ok) {
+              const names = await response.json()
+              if (!controller.signal.aborted) setNames(names)
+            }
           })
           .catch(() => {})
       }, 250)

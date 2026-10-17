@@ -4,6 +4,7 @@ import { createBusinessServer } from "./server"
 import type { ToolScope } from "./types"
 import { ERPNextError } from "../erpnext-client"
 import { identity } from "../platform/auth"
+import type { UserContext } from "../platform/policy"
 
 // Real MCP discovery/call messages, without an unnecessary network hop inside the app.
 export async function connectBusinessTools(scope: ToolScope) {
@@ -41,8 +42,11 @@ export async function connectBusinessTools(scope: ToolScope) {
       return value.data as T
     },
     close: async () => {
-      await client.close()
-      await server.close()
+      try {
+        await client.close()
+      } finally {
+        await server.close()
+      }
     },
   }
 }
@@ -51,8 +55,15 @@ export async function humanTool<T>(
   name: string,
   args: Record<string, unknown> = {},
 ) {
+  return humanToolForContext<T>(await identity(company), name, args)
+}
+export async function humanToolForContext<T>(
+  context: UserContext,
+  name: string,
+  args: Record<string, unknown> = {},
+) {
   const tools = await connectBusinessTools({
-    context: await identity(company),
+    context,
     principal: "human",
     evidence: [],
   })

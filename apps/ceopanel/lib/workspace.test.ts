@@ -31,6 +31,24 @@ import {
 } from "./workspace-server"
 import { POST } from "../app/api/workspace/modules/[moduleId]/records/route"
 
+describe("workspace calendar validation", () => {
+  const fields = [{ name: "from_date", label: "From", type: "date" as const }]
+  it("accepts real calendar dates and rejects impossible dates or timestamp inputs", () => {
+    expect(validateValues({ from_date: "2024-02-29" }, fields)).toEqual({
+      from_date: "2024-02-29",
+    })
+    for (const value of [
+      "2026-02-29",
+      "2026-02-30",
+      "2026-04-31",
+      "2026-10-01T12:00:00Z",
+    ])
+      expect(() => validateValues({ from_date: value }, fields)).toThrow(
+        "must be a date",
+      )
+  })
+})
+
 const schema: ModuleSchema = {
   ...pendingSchema(standardModules[0]),
   ready: true,
@@ -107,49 +125,43 @@ describe("ERP workspace guardrails", () => {
     expect((await workspaceSchema("customers")).ready).toBe(false)
     await expect(
       workspaceSave("customers", undefined, { values: {} }),
-    ).rejects.toMatchObject({ status: 409 })
+    ).rejects.toMatchObject({ status: 403 })
     expect(loadContext).not.toHaveBeenCalled()
   })
-  it("preserves the locked company, custom fields and child rows while rejecting scope conflicts", async () => {
+  it("blocks valid creates and scope conflicts even when the adapter grants writes", async () => {
     await expect(
       workspaceSave("customers", "Company A", {
         values: { customer_name: "New customer", company: "Company B" },
       }),
     ).rejects.toMatchObject({ status: 403 })
     expect(adapter.create).not.toHaveBeenCalled()
-    const result = await workspaceSave("customers", "Company A", {
-      values: {
-        customer_name: "New customer",
-        company: "Company A",
-        custom_tier: "Gold",
-        contacts: [{ full_name: "Contact A" }],
-      },
-    })
-    expect(result.values.company).toBe("Company A")
-    expect(result.values.custom_tier).toBe("Gold")
-    expect(result.values.contacts).toEqual([{ full_name: "Contact A" }])
-    expect(adapter.create).toHaveBeenCalledWith(
-      companyContext,
-      expect.objectContaining({ company: "Company A" }),
-    )
+    await expect(
+      workspaceSave("customers", "Company A", {
+        values: {
+          customer_name: "New customer",
+          company: "Company A",
+          custom_tier: "Gold",
+          contacts: [{ full_name: "Contact A" }],
+        },
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(adapter.create).not.toHaveBeenCalled()
   })
   it("blocks protected or unknown fields before writing", async () => {
     await expect(
       workspaceSave("customers", undefined, {
         values: { customer_name: "Customer", docstatus: 1 },
       }),
-    ).rejects.toMatchObject({ status: 400 })
+    ).rejects.toMatchObject({ status: 403 })
     expect(adapter.create).not.toHaveBeenCalled()
     expect(() =>
       validateValues(JSON.parse('{"__proto__":{"admin":true}}'), schema.fields),
     ).toThrow()
   })
   it("validates required fields, select choices, and child-table fields", async () => {
-    await expect(
-      workspaceSave("customers", undefined, {
-        values: { custom_tier: "Gold" },
-      }),
-    ).rejects.toThrow("Customer name is required")
+    expect(() =>
+      requiredValues({ custom_tier: "Gold" }, schema.fields),
+    ).toThrow("Customer name is required")
     expect(() =>
       validateValues({ custom_tier: "Admin" }, schema.fields),
     ).toThrow("Choose a valid")
@@ -170,7 +182,7 @@ describe("ERP workspace guardrails", () => {
         values: { notes: "Changed" },
         modified: "old-timestamp",
       }),
-    ).rejects.toMatchObject({ status: 409 })
+    ).rejects.toMatchObject({ status: 403 })
     expect(adapter.update).not.toHaveBeenCalled()
   })
   it("rejects documents and lists belonging to another company", async () => {
@@ -214,7 +226,7 @@ describe("ERP workspace guardrails", () => {
     expect(adapter.create).not.toHaveBeenCalled()
     expect(adapter.update).not.toHaveBeenCalled()
   })
-  it("permits only allow-on-submit fields on submitted records", async () => {
+  it("blocks every edit on submitted records, including allow-on-submit fields", async () => {
     existing.docstatus = 1
     await expect(
       workspaceSave("customers", undefined, {
@@ -222,59 +234,28 @@ describe("ERP workspace guardrails", () => {
         values: { customer_name: "Changed" },
         modified: existing.modified,
       }),
-    ).rejects.toMatchObject({ status: 400 })
-    expect(
-      (
-        await workspaceSave("customers", undefined, {
-          name: existing.name,
-          values: { notes: "Updated note" },
-          modified: existing.modified,
-        })
-      ).values.notes,
-    ).toBe("Updated note")
+    ).rejects.toMatchObject({ status: 403 })
+    await expect(
+      workspaceSave("customers", undefined, {
+        name: existing.name,
+        values: { notes: "Updated note" },
+        modified: existing.modified,
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(adapter.update).not.toHaveBeenCalled()
   })
-  it("uses explicit submit/cancel actions with document-state and timestamp checks", async () => {
-    expect(
-      (
-        await workspaceAction(
+  it("rejects submit, cancel, and workflow actions without invoking adapters", async () => {
+    for (const action of ["submit", "cancel", "Approve", "frappe.delete_doc"])
+      await expect(
+        workspaceAction(
           "customers",
           existing.name,
           undefined,
-          "submit",
+          action,
           existing.modified,
-        )
-      ).docstatus,
-    ).toBe(1)
-    await expect(
-      workspaceAction(
-        "customers",
-        existing.name,
-        undefined,
-        "cancel",
-        existing.modified,
-      ),
-    ).rejects.toMatchObject({ status: 409 })
-    await expect(
-      workspaceAction(
-        "customers",
-        existing.name,
-        undefined,
-        "frappe.delete_doc",
-        existing.modified,
-      ),
-    ).rejects.toMatchObject({ status: 400 })
-    existing.docstatus = 1
-    expect(
-      (
-        await workspaceAction(
-          "customers",
-          existing.name,
-          undefined,
-          "cancel",
-          existing.modified,
-        )
-      ).docstatus,
-    ).toBe(2)
+        ),
+      ).rejects.toMatchObject({ status: 403 })
+    expect(adapter.action).not.toHaveBeenCalled()
   })
   it("registers custom DocTypes without hardcoded standard field names", async () => {
     const module = {
@@ -355,7 +336,7 @@ describe("ERP workspace guardrails", () => {
           params,
         )
       ).status,
-    ).toBe(400)
+    ).toBe(403)
     expect(adapter.create).not.toHaveBeenCalled()
   })
 })

@@ -1,17 +1,16 @@
 "use client"
 import { useLocale } from "./locale-provider"
-import { useState } from "react"
-import { ExternalLink, LoaderCircle, LockKeyhole } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { LockKeyhole } from "lucide-react"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
+} from "./ui/dialog"
+import { LoginForm } from "./login-form"
 
+// OAuth consent uses the same credential and two-factor flow as the login page.
 export function LoginDialog({
   open,
   onOpenChange,
@@ -23,46 +22,9 @@ export function LoginDialog({
   siteUrl: string
   onConnected: () => Promise<void>
 }) {
-  const { t, locale } = useLocale()
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const changeOpen = (value: boolean) => {
-    if (!busy) {
-      setPassword("")
-      setError(null)
-      onOpenChange(value)
-    }
-  }
-  async function signIn(event: React.FormEvent) {
-    event.preventDefault()
-    setBusy(true)
-    setError(null)
-    try {
-      const response = await fetch("/api/erpnext/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      })
-      const body = await response.json()
-      if (!response.ok) throw new Error(body.error || "Sign-in failed.")
-      setPassword("")
-      onOpenChange(false)
-      await onConnected()
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Sign-in failed. Please try again.",
-      )
-      setPassword("")
-    } finally {
-      setBusy(false)
-    }
-  }
+  const { t } = useLocale()
   return (
-    <Dialog open={open} onOpenChange={changeOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="mb-3 flex size-10 items-center justify-center rounded-xl border bg-muted">
@@ -76,59 +38,20 @@ export function LoginDialog({
             )}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={signIn} className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="erp-username" className="text-sm font-medium">
-              {t("ERPNext email or username")}
-            </label>
-            <Input
-              id="erp-username"
-              autoComplete="username"
-              required
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              disabled={busy}
-              placeholder="you@company.com"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="erp-password" className="text-sm font-medium">
-              {t("Password")}
-            </label>
-            <Input
-              id="erp-password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={busy}
-            />
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {t(error)}
-            </p>
-          )}
-          <Button type="submit" className="w-full" disabled={busy}>
-            {busy && <LoaderCircle className="animate-spin" />}
-            {busy ? t("Connecting…") : t("Sign in to ERPNext")}
-          </Button>
-        </form>
+        {open && (
+          <LoginForm
+            siteUrl={siteUrl}
+            onConnected={async () => {
+              await onConnected()
+              onOpenChange(false)
+            }}
+          />
+        )}
         <p className="text-xs leading-relaxed text-muted-foreground">
           {t(
             "Your password is sent to your company’s ERPNext site and is not saved by this platform.",
           )}
         </p>
-        <a
-          className="flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:underline"
-          href={`${siteUrl}/login`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {t("Open company ERPNext")}
-          <ExternalLink className="size-3" />
-        </a>
       </DialogContent>
     </Dialog>
   )

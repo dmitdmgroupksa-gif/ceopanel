@@ -12,11 +12,13 @@ import {
 import { LanguageSwitch, useLocale } from "./locale-provider"
 import { LoginDialog } from "./login-dialog"
 import type { DashboardContext } from "@/lib/dashboard-server"
+import { ERP_READ_ONLY } from "@/lib/erp-access"
 type Preview = {
   client: { name: string; redirectUri: string }
   context: DashboardContext
   agents: { id: string; name: string; ar: string }[]
   canPropose: boolean
+  erpRead?: boolean
 }
 export function MCPConsent({
   query,
@@ -34,10 +36,12 @@ export function MCPConsent({
     [propose, setPropose] = useState(false),
     [login, setLogin] = useState(false),
     [error, setError] = useState(""),
+    [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false)
   const load = useCallback(async () => {
     const version = ++generation.current
     setPreview(null)
+    setLoading(true)
     setError("")
     setAgent("")
     setPropose(false)
@@ -61,6 +65,8 @@ export function MCPConsent({
         setError(
           error instanceof Error ? error.message : "Unable to load consent.",
         )
+    } finally {
+      if (version === generation.current) setLoading(false)
     }
   }, [query, company])
   useEffect(() => {
@@ -162,11 +168,15 @@ export function MCPConsent({
                 </select>
               </label>
               <p className="text-sm text-muted-foreground">
+                {preview.erpRead &&
+                  (ar
+                    ? "السماح بقراءة سجلات الأعمال والتقارير والأنواع المخصصة وحالات الاعتماد وتنزيل الملفات عبر نظام ERP، بما فيها الشركات الأخرى التي يستطيع حسابك الوصول إليها. يستثني ذلك كلمات المرور وإعدادات الأمان. "
+                    : "Allow reading business records, reports, custom DocTypes, workflow states and files across this ERP, including other companies your account can access. Credentials and security settings are excluded. ")}
                 {ar
-                  ? "قراءة مصادر الشركة المعتمدة والمتاحة لحسابك فقط. تنتهي صلاحية الاتصال بعد ثماني ساعات أو عند انتهاء جلسة ERPNext."
-                  : "Read approved company sources permitted for your account. Access expires after eight hours or when your ERPNext session ends."}
+                  ? `${preview.erpRead ? "الشركة المحددة لسياق الاتصال؛ تُطبق صلاحيات حسابك عبر نظام ERP." : "قراءة مصادر الشركة المعتمدة والمتاحة لحسابك فقط."} تنتهي صلاحية الاتصال بعد ثماني ساعات أو عند انتهاء جلسة ERPNext.`
+                  : `${preview.erpRead ? "The selected company labels this connection; native permissions apply across the ERP." : "Read approved company sources permitted for your account."} Access expires after eight hours or when your ERPNext session ends.`}
               </p>
-              {preview.canPropose && (
+              {!ERP_READ_ONLY && preview.canPropose && (
                 <label className="flex gap-3 text-sm">
                   <input
                     type="checkbox"
@@ -181,8 +191,8 @@ export function MCPConsent({
               )}
               <p className="text-sm">
                 {ar
-                  ? "لا يمكن لهذا التطبيق الموافقة على التغييرات أو تنفيذها. تتم الموافقة البشرية من لوحة التحكم."
-                  : "This application cannot approve or execute changes. Human approval takes place in the dashboard."}
+                  ? "هذا الاتصال للقراءة فقط. إنشاء السجلات وتعديلها وإرسالها والموافقة عليها معطلة."
+                  : "This application cannot approve or execute changes. Creating, editing and submitting ERP records are disabled."}
               </p>
               <div className="flex gap-3">
                 <Button
@@ -200,6 +210,14 @@ export function MCPConsent({
                 </Button>
               </div>
             </>
+          ) : loading ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {ar ? "جارٍ التحقق من الاتصال…" : "Checking connection…"}
+            </p>
+          ) : error ? (
+            <Button variant="outline" onClick={() => void load()}>
+              {ar ? "إعادة المحاولة" : "Try again"}
+            </Button>
           ) : (
             <Button variant="outline" onClick={() => setLogin(true)}>
               {ar ? "تسجيل الدخول إلى ERPNext" : "Sign in to ERPNext"}

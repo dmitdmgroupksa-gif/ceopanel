@@ -1,8 +1,11 @@
 import "server-only"
+import { denyERPWrite, readOnlySchema } from "./erp-access"
 import { companyValues } from "./platform/policy"
 import { loadContext, type DashboardContext } from "./dashboard-server"
 import { ERPNextError } from "./erpnext-client"
 import { configuredWorkspace } from "./platform/erp-adapters"
+import { nativeWorkspace } from "./erp-native/workspace"
+import { nativeModules } from "./erp-native/catalog"
 import {
   pendingSchema,
   requiredValues,
@@ -44,16 +47,32 @@ export type WorkspaceAdapter = {
 // Each adapter must use the authenticated user's ERPNext permissions and check
 // field-level read access. Never fall back to a shared administrator token.
 const configured = configuredWorkspace()
-export const customModules: WorkspaceModule[] = configured.modules
-export const workspaceAdapters: Record<string, WorkspaceAdapter> =
-  configured.adapters
+export const customModules: WorkspaceModule[] = [
+  ...nativeModules
+    .filter((entry) => entry.module.custom)
+    .map((entry) => entry.module),
+  ...configured.modules.filter(
+    (module) => !nativeModules.some((entry) => entry.module.id === module.id),
+  ),
+]
+export const workspaceAdapters: Record<string, WorkspaceAdapter> = {
+  ...configured.adapters,
+  ...nativeWorkspace(),
+}
 export const customReports: ReportDefinition[] = configured.reports
 export const reportAdapters: Record<
   string,
   (context: DashboardContext, filters: RecordValues) => Promise<ReportData>
 > = configured.reportAdapters
 export function workspaceCatalog() {
-  return [...standardModules, ...customModules]
+  const additional = nativeModules
+    .filter(
+      (entry) =>
+        !entry.module.custom &&
+        !standardModules.some((module) => module.id === entry.module.id),
+    )
+    .map((entry) => entry.module)
+  return [...standardModules, ...additional, ...customModules]
 }
 
 function moduleFor(id: string) {
@@ -87,7 +106,7 @@ async function authorized(id: string, company?: string) {
     schema.module.doctype !== module.doctype
   )
     throw new ERPNextError("This module's API setup is incomplete.", 409)
-  return { adapter, context, schema }
+  return { adapter, context, schema: readOnlySchema(schema) }
 }
 export async function workspaceSchema(id: string, company?: string) {
   const module = moduleFor(id)
@@ -131,6 +150,7 @@ export async function workspaceSave(
   company: string | undefined,
   input: { name?: string; values: unknown; modified?: string },
 ) {
+  denyERPWrite()
   const { adapter, context, schema } = await authorized(id, company)
   const permission = input.name ? "edit" : "create"
   if (
@@ -181,6 +201,7 @@ export async function workspaceAction(
   action: string,
   modified: string,
 ) {
+  denyERPWrite()
   const { adapter, context, schema } = await authorized(id, company)
   const workflow = !!schema.workflowActions?.includes(action)
   if (!workflow && action !== "submit" && action !== "cancel")

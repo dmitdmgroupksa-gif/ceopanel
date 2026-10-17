@@ -1,9 +1,8 @@
 import { z } from "zod"
 import { agents } from "@/lib/platform/catalog"
 import { capabilities, platformConfig } from "@/lib/platform/config"
-import { database } from "@/lib/platform/db"
-import { maxUpload } from "@/lib/platform/knowledge"
-import { validSignature, eventId } from "@/lib/platform/events"
+import { maxUpload } from "@/lib/upload-limits"
+import { validSignature, receiveERPEvent } from "@/lib/platform/events"
 import { validOrigin } from "@/lib/erpnext-server"
 import { ERPNextError } from "@/lib/erpnext-client"
 import {
@@ -12,29 +11,17 @@ import {
   queryCompany,
 } from "@/lib/workspace-http"
 import { validMetaSignature, receiveWhatsApp } from "@/lib/platform/channels"
-import { humanTool } from "@/lib/mcp/client"
-import { binaryResponse, fileArgument } from "@/lib/mcp/platform-services"
+import { humanTool } from "@/lib/mcp/human-tool"
+import { binaryResponse, fileArgument } from "@/lib/mcp/binary"
+import { identity } from "@/lib/platform/auth"
+import { configurationReadiness } from "@/lib/platform/readiness"
+import { requestBody as bounded } from "@/lib/request-body"
+import { nativeReadEnabled } from "@/lib/erp-native/read-policy"
+import { ERP_READ_ONLY, denyERPWrite } from "@/lib/erp-access"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 type Context = { params: Promise<{ path: string[] }> }
-async function bounded(request: Request, limit: number) {
-  const reader = request.body?.getReader()
-  if (!reader) return Buffer.alloc(0)
-  const chunks: Uint8Array[] = []
-  let size = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    size += value.length
-    if (size > limit) {
-      await reader.cancel()
-      throw new ERPNextError("Request exceeds the upload limit.", 413)
-    }
-    chunks.push(value)
-  }
-  return Buffer.concat(chunks)
-}
 function error(cause: unknown) {
   return cause instanceof z.ZodError || cause instanceof SyntaxError
     ? workspaceResponse({ error: "Invalid request data." }, 400)
@@ -67,11 +54,19 @@ export async function GET(request: Request, { params }: Context) {
         ...capabilities(),
         agents: agents.map((a) => ({
           id: a.id,
-          configured: !!platformConfig().agents[a.id],
+          configured: !!platformConfig().agents[a.id] || nativeReadEnabled(),
         })),
         modules: platformConfig().modules.filter((m) => m.readValidated).length,
       })
     const company = queryCompany(request)
+    if (path === "readiness") {
+      const context = await identity(company)
+      if (!context.roles.includes("System Manager"))
+        throw new ERPNextError("Administrator access required.", 403)
+      return workspaceResponse(
+        configurationReadiness(platformConfig(), process.env),
+      )
+    }
     const query = new URL(request.url).searchParams
     if (path.startsWith("attachments/"))
       return binaryResponse(
@@ -101,7 +96,7 @@ export async function GET(request: Request, { params }: Context) {
           search: query.get("search") || "",
         }),
       )
-    if (reads[path])
+    if (Object.hasOwn(reads, path))
       return workspaceResponse(await humanTool(company, reads[path]))
     throw new ERPNextError("Platform endpoint not found.", 404)
   } catch (cause) {
@@ -130,31 +125,25 @@ export async function POST(request: Request, { params }: Context) {
         )
       )
         throw new ERPNextError("Invalid event signature.", 401)
-      const event = JSON.parse(body)
-      if (
-        typeof event.doctype !== "string" ||
-        typeof event.name !== "string" ||
-        typeof event.modified !== "string"
-      )
-        throw new ERPNextError(
-          "ERP event requires doctype, name and modified.",
-          400,
-        )
-      const id = eventId(body)
-      const inserted = await database().query(
-        "INSERT INTO event_inbox(id) VALUES($1) ON CONFLICT DO NOTHING RETURNING id",
-        [id],
-      )
-      if (inserted.rowCount)
-        await database().query(
-          "INSERT INTO sync_state(source,last_event_at) VALUES('erpnext',now()) ON CONFLICT(source) DO UPDATE SET last_event_at=now()",
-        )
-      return workspaceResponse({ accepted: true, id }, 202)
+      return workspaceResponse(await receiveERPEvent(body), 202)
     }
     if (!validOrigin(request))
       throw new ERPNextError("Request must originate from this platform.", 403)
+    if (
+      ERP_READ_ONLY &&
+      [
+        "field-updates",
+        "knowledge/upload",
+        "knowledge/retry",
+        "proposals/review",
+        "proposals/edit",
+        "notifications/read",
+      ].includes(path)
+    )
+      denyERPWrite()
     const company = queryCompany(request)
     if (path === "field-updates" || path === "knowledge/upload") {
+      await identity(company)
       const buffer = await bounded(request, maxUpload + 100000)
       const form = await new Request(request.url, {
         method: "POST",
@@ -205,7 +194,7 @@ export async function POST(request: Request, { params }: Context) {
       "knowledge/retry": "knowledge_retry",
       "notifications/read": "notification_read",
     }
-    if (writes[path])
+    if (Object.hasOwn(writes, path))
       return workspaceResponse(await humanTool(company, writes[path], body))
     throw new ERPNextError("Platform endpoint not found.", 404)
   } catch (cause) {

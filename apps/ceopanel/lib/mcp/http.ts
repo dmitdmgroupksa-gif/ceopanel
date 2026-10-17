@@ -12,6 +12,9 @@ import {
 } from "./oauth"
 import { withDelegatedERP } from "./erp-identity"
 import { createBusinessServer } from "./server"
+import { requestBody } from "../request-body"
+import { ERP_READ_ONLY } from "../erp-access"
+import { authenticationChallenge } from "./tool-response"
 
 export const noStore = {
   "Cache-Control": "no-store",
@@ -22,11 +25,21 @@ export function cors(request: Request, response: Response) {
   const origin = request.headers.get("origin")
   const allowed = new Set([
     process.env.CEOPANEL_ORIGIN,
-    ...(process.env.MCP_CLIENT_ORIGINS || "").split(",").filter(Boolean),
+    ...(process.env.MCP_CLIENT_ORIGINS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
   ])
   if (origin && allowed.has(origin)) {
     response.headers.set("Access-Control-Allow-Origin", origin)
-    response.headers.set("Vary", "Origin")
+    const vary = new Set(
+      (response.headers.get("Vary") || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    )
+    vary.add("Origin")
+    response.headers.set("Vary", [...vary].join(", "))
     response.headers.set(
       "Access-Control-Expose-Headers",
       "WWW-Authenticate,Mcp-Session-Id,Mcp-Protocol-Version",
@@ -66,7 +79,10 @@ export function trustedRequest(request: Request, browserOnly = false) {
   const supplied = request.headers.get("origin")
   const allowed = new Set([
     origin,
-    ...(process.env.MCP_CLIENT_ORIGINS || "").split(",").filter(Boolean),
+    ...(process.env.MCP_CLIENT_ORIGINS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
   ])
   if (
     (browserOnly && supplied !== origin) ||
@@ -75,21 +91,9 @@ export function trustedRequest(request: Request, browserOnly = false) {
     throw new ERPNextError("Untrusted MCP origin.", 403)
 }
 export async function boundedText(request: Request, limit = 24000) {
-  const reader = request.body?.getReader()
-  if (!reader) return ""
-  const chunks: Uint8Array[] = []
-  let size = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    size += value.length
-    if (size > limit) {
-      await reader.cancel()
-      throw new ERPNextError("Request exceeds the MCP size limit.", 413)
-    }
-    chunks.push(value)
-  }
-  return Buffer.concat(chunks).toString("utf8")
+  return (
+    await requestBody(request, limit, "Request exceeds the MCP size limit.")
+  ).toString("utf8")
 }
 export function mcpError(error: unknown, oauth = false) {
   const status =
@@ -108,7 +112,7 @@ export function mcpError(error: unknown, oauth = false) {
   if (status === 401) {
     try {
       authenticate = {
-        "WWW-Authenticate": `Bearer resource_metadata="${externalReady()}/.well-known/oauth-protected-resource/api/mcp", scope="ceopanel:read ceopanel:propose"`,
+        "WWW-Authenticate": authenticationChallenge(),
       }
     } catch {}
   }
@@ -124,7 +128,14 @@ export function mcpError(error: unknown, oauth = false) {
           error_description: message,
         }
       : { error: message },
-    { status, headers: { ...noStore, ...authenticate } },
+    {
+      status,
+      headers: {
+        ...noStore,
+        ...authenticate,
+        ...(status === 429 ? { "Retry-After": "60" } : {}),
+      },
+    },
   )
 }
 export async function serveMcp(request: Request) {
@@ -133,12 +144,14 @@ export async function serveMcp(request: Request) {
     const { claims, grant, context } = await authenticateMcp(request)
     return await withDelegatedERP(claims.sid, async () => {
       // Persist references between stateless calls, scoped to this exact consent.
-      const rows = (
-        await database().query(
-          "SELECT id,agent,evidence FROM mcp_tool_calls WHERE grant_id=$1 AND company=$2 AND owner=$3 AND agent=$4 AND status='completed' AND jsonb_array_length(evidence)>0 AND created_at>now()-interval '15 minutes' ORDER BY created_at DESC LIMIT 5",
-          [grant.id, context.company, context.user, claims.agent],
-        )
-      ).rows
+      const rows = ERP_READ_ONLY
+        ? []
+        : (
+            await database().query(
+              "SELECT id,agent,evidence FROM mcp_tool_calls WHERE grant_id=$1 AND company=$2 AND owner=$3 AND agent=$4 AND status='completed' AND jsonb_array_length(evidence)>0 AND created_at>now()-interval '15 minutes' ORDER BY created_at DESC LIMIT 5",
+              [grant.id, context.company, context.user, claims.agent],
+            )
+          ).rows
       const evidence = (await permittedEvidence(context, rows)).flatMap(
         (r) => r.evidence,
       )
@@ -150,6 +163,7 @@ export async function serveMcp(request: Request) {
             agent: claims.agent,
             grantId: grant.id,
             canPropose: grant.scopes.includes("ceopanel:propose"),
+            erpRead: grant.scopes.includes("ceopanel:erp-read"),
             evidence,
           }),
         { maxRequestBodySize: 220000, maxSubscriptions: 0 },

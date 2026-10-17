@@ -7,8 +7,9 @@ import {
   pkceChallenge,
   redirectAllowed,
 } from "./crypto"
-import { trustedRequest } from "./http"
+import { trustedRequest, cors } from "./http"
 import { delegatedSid, withDelegatedERP } from "./erp-identity"
+import { connectBusinessTools } from "./client"
 beforeEach(() => {
   vi.stubEnv("CEOPANEL_ORIGIN", "https://panel.example")
   vi.stubEnv("MCP_EXTERNAL_ENABLED", "true")
@@ -16,6 +17,47 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllEnvs())
 describe("MCP credential and origin boundaries", () => {
+  it("preserves a structured service-unavailable error when the audit database is unconfigured", async () => {
+    vi.stubEnv("DATABASE_URL", "")
+    vi.stubEnv("PGHOST", "")
+    const tools = await connectBusinessTools({
+      context: {
+        user: "fixture@example.com",
+        company: "Fixture",
+        roles: [],
+        currency: "SAR",
+        companies: [],
+        siteUrl: "https://example.frappe.cloud",
+      },
+      principal: "human",
+      evidence: [],
+    })
+    try {
+      await expect(tools.call("notifications_list")).rejects.toMatchObject({
+        status: 503,
+      })
+    } finally {
+      await tools.close()
+    }
+  })
+  it("accepts whitespace-separated configured client origins and preserves existing Vary headers", () => {
+    vi.stubEnv(
+      "MCP_CLIENT_ORIGINS",
+      " https://client.example, https://second.example ",
+    )
+    const request = new Request("https://panel.example/api/mcp", {
+      headers: { Origin: "https://second.example" },
+    })
+    expect(() => trustedRequest(request)).not.toThrow()
+    const response = cors(
+      request,
+      new Response(null, { headers: { Vary: "Authorization" } }),
+    )
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(
+      "https://second.example",
+    )
+    expect(response.headers.get("Vary")).toBe("Authorization, Origin")
+  })
   it("encrypts credentials and binds tokens to purpose, audience and issuer", () => {
     const token = seal(
       "access",

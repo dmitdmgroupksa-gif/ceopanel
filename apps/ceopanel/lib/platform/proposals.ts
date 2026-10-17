@@ -15,6 +15,7 @@ import { ERPNextError } from "../erpnext-client"
 import { requiredValues, validateValues } from "../workspace"
 import { verifiedReceipt, executionAuthorization } from "./receipts"
 import { permittedEvidence } from "./evidence"
+import { denyERPWrite, ERP_READ_ONLY } from "../erp-access"
 
 const moduleId = z.string().min(1).max(140)
 const recordIdentity = {
@@ -60,6 +61,7 @@ export function canReview(
 ) {
   const mapping = platformConfig().agents[proposal.agent]
   return (
+    !ERP_READ_ONLY &&
     proposal.company === context.company &&
     !!mapping?.approvers.includes(context.user) &&
     mapping.roles.some((r) => context.roles.includes(r))
@@ -358,6 +360,7 @@ export async function review(
   revision: number,
   decision: "approve" | "reject",
 ) {
+  denyERPWrite()
   id = id.toLowerCase()
   const proposal = await transaction(async (db) => {
     const row = (

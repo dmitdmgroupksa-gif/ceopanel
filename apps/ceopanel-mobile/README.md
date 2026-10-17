@@ -2,6 +2,10 @@
 
 Expo/React Native client for the existing bilingual portal on iOS and Android.
 Set `EXPO_PUBLIC_CEOPANEL_URL` to the deployed CEO Panel HTTPS origin and run `npm start`.
+
+The app opens the dashboard workspace. Native ERP reads do not require an AI
+model; the assistant destination is optional. Android's hardware Back button
+navigates WebView history before leaving the app.
 ERP sessions remain inside the platform WebView's HttpOnly cookie storage. Server secrets
 are never included in this app. External HTTPS links open in the device browser.
 

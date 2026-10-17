@@ -25,6 +25,10 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # local env files
+.env
+.env.*
+!.env.example
+!.env.*.example
 .env.local
 .env.development.local
 .env.test.local
@@ -54,6 +58,10 @@ __screenshots__
 .vercel
 .private-documents/
 platform.config.json
+platform.config.draft.json
+ceopanel-discovery.json
+apps/ceopanel/test-results/
+apps/ceopanel/playwright-report/
 backups/
 apps/ceopanel/deploy/.env
 __pycache__/
@@ -61,3 +69,8 @@ __pycache__/
 
 CONTEXT.md
 docs/adr
+
+# Private company access/inventory reports; keep local copies out of public Git.
+apps/ceopanel/ERP-CAPABILITIES.md
+apps/ceopanel/ERP-READABILITY-AUDIT.md
+apps/ceopanel/ERP-DISCOVERY.md

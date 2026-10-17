@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
-import { humanTool } from "@/lib/mcp/client"
+import { humanTool } from "@/lib/mcp/human-tool"
 import { dashboardAdapters, loadDashboard } from "@/lib/dashboard-server"
 import { ERPNextError } from "@/lib/erpnext-client"
+import { isNativeDashboard } from "@/lib/erp-native/dashboards"
 export const dynamic = "force-dynamic"
 export async function GET(
   request: Request,
@@ -18,7 +19,8 @@ export async function GET(
     )
   try {
     return NextResponse.json(
-      Object.hasOwn(dashboardAdapters, dashboardId)
+      Object.hasOwn(dashboardAdapters, dashboardId) &&
+        !isNativeDashboard(dashboardId)
         ? await humanTool(
             params.get("company") || undefined,
             "dashboard_read",

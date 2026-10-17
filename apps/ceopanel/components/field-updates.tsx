@@ -1,6 +1,7 @@
 "use client"
+import { sessionFetch as fetch } from "@/lib/session-fetch"
 import { useEffect, useState, useCallback, useRef } from "react"
-import { Upload, Wifi, WifiOff, Trash2 } from "lucide-react"
+import { Upload, WifiOff, Trash2 } from "lucide-react"
 import { Button } from "./ui/button"
 import {
   Card,
@@ -15,6 +16,8 @@ import { useLocale } from "./locale-provider"
 import type { DashboardContext } from "@/lib/dashboard-server"
 import { editableValues } from "@/lib/workspace"
 import type { ModuleSchema, RecordValues } from "@/lib/workspace"
+import { ERP_READ_ONLY, ERP_READ_ONLY_MESSAGE } from "@/lib/erp-access"
+import { maxUpload } from "@/lib/upload-limits"
 import {
   offlineInputs,
   saveOfflineInput,
@@ -84,6 +87,8 @@ export function FieldUpdates({
     let current = true
     setSchema(null)
     setValues({})
+    setPhotos([])
+    if (photoInput.current) photoInput.current.value = ""
     if (!active || !context) return
     void fetch(`/api/workspace/modules/${active.id}${scope}`, {
       cache: "no-store",
@@ -112,7 +117,7 @@ export function FieldUpdates({
     try {
       if (
         photos.length > 5 ||
-        photos.reduce((size, f) => size + f.size, 0) > 10 * 1024 * 1024
+        photos.reduce((size, f) => size + f.size, 0) > maxUpload
       )
         throw new Error("Upload at most five photos totaling 10 MB.")
       await saveOfflineInput({
@@ -144,6 +149,18 @@ export function FieldUpdates({
     }
   }
   async function submit(draft: OfflineInput) {
+    if (ERP_READ_ONLY) {
+      setError(ERP_READ_ONLY_MESSAGE)
+      return
+    }
+    if (
+      !context ||
+      draft.owner !== context.user ||
+      draft.company !== context.company
+    ) {
+      setError("Sign in as this draft's owner and company before submitting.")
+      return
+    }
     setBusy(true)
     setError("")
     try {
@@ -183,11 +200,20 @@ export function FieldUpdates({
   }
   return (
     <section className="space-y-5">
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        {online ? <Wifi className="size-4" /> : <WifiOff className="size-4" />}
-        {t(online ? "Online" : "Offline")} ·{" "}
-        {t("Saved drafts stay on this device until submitted or removed.")}
-      </p>
+      {ERP_READ_ONLY && (
+        <p className="text-sm text-muted-foreground">
+          {t(ERP_READ_ONLY_MESSAGE)}
+        </p>
+      )}
+      {!online && (
+        <p
+          role="status"
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+        >
+          <WifiOff className="size-4" />
+          {t("Offline")}
+        </p>
+      )}
       {error && (
         <p
           role="alert"
@@ -198,7 +224,7 @@ export function FieldUpdates({
       )}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t("Field updates")}</CardTitle>
+          <CardTitle className="text-base">{t("New update")}</CardTitle>
           <CardDescription>
             {t(
               "Photos and record drafts require manager approval before ERP changes.",
@@ -267,6 +293,11 @@ export function FieldUpdates({
               >
                 {t("Save device draft")}
               </Button>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Saved drafts stay on this device until submitted or removed.",
+                )}
+              </p>
             </form>
           )}
         </CardContent>
@@ -290,7 +321,7 @@ export function FieldUpdates({
               </pre>
               <div className="flex flex-wrap gap-2">
                 <Button
-                  disabled={busy || !online}
+                  disabled={ERP_READ_ONLY || busy || !online}
                   onClick={() => void submit(draft)}
                 >
                   <Upload />

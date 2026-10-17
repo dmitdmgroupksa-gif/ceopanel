@@ -35,6 +35,26 @@ class Doc:
     def as_dict(self):
         return dict(self.values)
 
+class DiscoveryTests(unittest.TestCase):
+    def test_optional_missing_app_does_not_block_child_schema_discovery(self):
+        version_module = types.ModuleType("frappe.utils.change_log")
+        version_module.get_versions = lambda: {"frappe": {"version": "fixture"}}
+        child = types.SimpleNamespace(fieldname="qty", label="Quantity", fieldtype="Float", options=None, reqd=1, read_only=0, permlevel=0, allow_on_submit=0)
+        table = types.SimpleNamespace(fieldname="items", label="Items", fieldtype="Table", options="Sales Order Item", reqd=1, read_only=0, permlevel=0, allow_on_submit=0)
+        def get_meta(doctype):
+            if doctype == "Missing HR Type":
+                raise KeyError(doctype)
+            return types.SimpleNamespace(fields=[table] if doctype == "Sales Order" else [child], permissions=[])
+        with patch.dict(sys.modules, {"frappe.utils.change_log": version_module}), \
+             patch.object(bridge, "authenticated"), \
+             patch.object(bridge, "config", return_value={"modules": [{"id": "leave", "doctype": "Missing HR Type"}, {"id": "orders", "doctype": "Sales Order"}]}), \
+             patch.object(frappe, "only_for", create=True), \
+             patch.object(frappe, "get_list", return_value=[], create=True), \
+             patch.object(frappe, "get_meta", side_effect=get_meta, create=True):
+            result = bridge.discovery()
+        self.assertEqual(result["schemas"]["leave"]["state"], "missing_doctype")
+        self.assertEqual(result["schemas"]["orders"]["fields"][0]["fields"][0]["name"], "qty")
+
 class ChildValidationTests(unittest.TestCase):
     fields = [{"name": "items", "type": "table", "fields": [{"name": "quantity", "type": "number"}]}]
     def setUp(self):
@@ -86,6 +106,26 @@ class ReportValidationTests(unittest.TestCase):
         self.report_module.run = run
         with patch.object(bridge, "company_access"), patch.object(bridge, "config", return_value=self.config):
             bridge.report("sales", "Durar")
+
+class DashboardValidationTests(unittest.TestCase):
+    def test_company_cannot_be_overridden_and_report_defaults_are_disabled(self):
+        report_module = types.ModuleType("frappe.desk.query_report")
+        called = []
+        def run(name, **kwargs):
+            called.append(kwargs)
+            return {"ceopanel_dashboard": {"company": "Durar", "dashboardId": "sales"}}
+        report_module.run = run
+        configuration = {"dashboards": {"sales": {"mappingValidated": True, "roles": ["Manager"], "report": "Verified Sales"}}}
+        with patch.dict(sys.modules, {"frappe.desk.query_report": report_module}), patch.object(bridge, "company_access"), patch.object(bridge, "config", return_value=configuration), patch.object(frappe, "get_roles", return_value=["Manager"], create=True):
+            with self.assertRaises(PermissionError):
+                bridge.dashboard("sales", "Durar", {"company": "Other"})
+            self.assertEqual(called, [])
+            with self.assertRaises(ValueError):
+                bridge.dashboard("sales", "Durar", [])
+            bridge.dashboard("sales", "Durar", {"from": "2026-10-01"})
+        self.assertEqual(called[0]["filters"], {"from": "2026-10-01", "company": "Durar"})
+        self.assertFalse(called[0]["are_default_filters"])
+        self.assertTrue(called[0]["ignore_prepared_report"])
 
 class FieldProjectionTests(unittest.TestCase):
     def test_create_permissions_are_projected_for_a_create_only_user(self):

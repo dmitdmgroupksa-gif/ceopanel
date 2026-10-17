@@ -1,4 +1,9 @@
 name: ceopanel
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
 x-platform: &platform
   image: ceopanel:local
   build:
@@ -18,9 +23,11 @@ x-platform: &platform
     - ../platform.config.json:/config/platform.config.json:ro
     - documents:/app/.private-documents
   restart: unless-stopped
+  logging: *logging
 services:
   postgres:
     image: pgvector/pgvector:pg17
+    logging: *logging
     environment:
       POSTGRES_USER: ceopanel
       POSTGRES_DB: ceopanel
@@ -33,6 +40,7 @@ services:
     restart: unless-stopped
   redis:
     image: redis:7-alpine
+    logging: *logging
     command:
       [
         "redis-server",
@@ -76,6 +84,7 @@ services:
       redis: { condition: service_healthy }
   proxy:
     image: caddy:2-alpine
+    logging: *logging
     ports: ["80:80", "443:443"]
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST:?Set PUBLIC_HOST}

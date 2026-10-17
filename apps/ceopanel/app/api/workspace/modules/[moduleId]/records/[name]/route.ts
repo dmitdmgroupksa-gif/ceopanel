@@ -1,4 +1,7 @@
-import { humanTool } from "@/lib/mcp/client"
+import { humanTool } from "@/lib/mcp/human-tool"
+import { nativeModule } from "@/lib/erp-native/catalog"
+import { workspaceGet } from "@/lib/workspace-server"
+import { denyERPWrite } from "@/lib/erp-access"
 import {
   queryCompany,
   workspaceBody,
@@ -11,10 +14,12 @@ export async function GET(request: Request, context: Context) {
   try {
     const { moduleId, name } = await context.params
     return workspaceResponse(
-      await humanTool(queryCompany(request), "workspace_record", {
-        module: moduleId,
-        name,
-      }),
+      nativeModule(moduleId)
+        ? await workspaceGet(moduleId, name, queryCompany(request))
+        : await humanTool(queryCompany(request), "workspace_record", {
+            module: moduleId,
+            name,
+          }),
     )
   } catch (cause) {
     return workspaceError(cause)
@@ -22,6 +27,7 @@ export async function GET(request: Request, context: Context) {
 }
 export async function PUT(request: Request, context: Context) {
   try {
+    denyERPWrite()
     const body = await workspaceBody(request)
     const { moduleId, name } = await context.params
     return workspaceResponse(

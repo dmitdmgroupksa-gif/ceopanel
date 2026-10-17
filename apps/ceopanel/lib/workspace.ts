@@ -1,3 +1,5 @@
+import { erpDate } from "./erp-native/date"
+
 export const standardModules = [
   {
     id: "customers",
@@ -191,6 +193,7 @@ export type ModuleSchema = {
   companyField?: string
   submittable: boolean
   workflowActions?: string[]
+  scope?: "company" | "shared"
 }
 export type ReportDefinition = {
   id: string
@@ -306,12 +309,13 @@ export function validateValues(
         !field.options?.includes(String(value))
       )
         throw new Error(`Choose a valid ${field.label}.`)
-      if (
-        field.type === "date" &&
-        value &&
-        !/^\d{4}-\d{2}-\d{2}$/.test(String(value))
-      )
-        throw new Error(`${field.label} must be a date.`)
+      if (field.type === "date" && value) {
+        try {
+          if (erpDate(value) !== value) throw new Error()
+        } catch {
+          throw new Error(`${field.label} must be a date.`)
+        }
+      }
       output[name] = value as string | null
     }
   }

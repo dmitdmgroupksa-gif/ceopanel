@@ -2,6 +2,7 @@ import "server-only"
 import { cookies } from "next/headers"
 import { delegatedSid } from "./mcp/erp-identity"
 import { ERPNextClient, ERPNextError, type Filter } from "./erpnext-client"
+import { permissionedReader } from "./erp-native/permissioned-reader"
 import {
   businessDate,
   makePeriod,
@@ -10,9 +11,23 @@ import {
   type SourceKey,
 } from "./model"
 
-export const SESSION_COOKIE = "ceopanel_erpnext_sid"
+export { SESSION_COOKIE } from "./auth-navigation"
+import { SESSION_COOKIE } from "./auth-navigation"
 export const companyName = process.env.COMPANY_NAME || "Durar Masagh"
 export const timezone = process.env.BUSINESS_TIMEZONE || "Asia/Riyadh"
+
+export function selectCompany(companies: Company[], selected?: string) {
+  const company = selected
+    ? companies.find((item) => item.name === selected)
+    : (companies.find((item) => item.name === process.env.ERPNEXT_COMPANY) ??
+      companies[0])
+  if (!company)
+    throw new ERPNextError(
+      "Your account cannot access the selected ERPNext company.",
+      403,
+    )
+  return company
+}
 
 export function siteUrl() {
   const url = new URL(process.env.ERPNEXT_URL || "https://dmgroup.frappe.cloud")
@@ -48,16 +63,15 @@ export async function loadSnapshot(
   const companies = await erp.list<Company>("Company", {
     fields: ["name", "default_currency"],
   })
-  const preferred = selectedCompany || process.env.ERPNEXT_COMPANY
-  const company = preferred
-    ? companies.find((item) => item.name === preferred)
-    : companies[0]
-  if (!company)
-    throw new ERPNextError(
-      "Your account cannot access the selected ERPNext company.",
-      403,
-    )
+  const company = selectCompany(companies, selectedCompany)
   const period = makePeriod(days, businessDate(new Date(), timezone))
+  const reader = permissionedReader(erp, {
+    user,
+    company: company.name,
+    currency: company.default_currency || "SAR",
+    companies,
+    siteUrl: siteUrl(),
+  })
   const companyFilter: Filter[] = [["company", "=", company.name]]
   const submitted: Filter[] = [...companyFilter, ["docstatus", "=", 1]]
   const dated: Filter[] = [
@@ -160,10 +174,16 @@ export async function loadSnapshot(
   const entries = await Promise.all(
     Object.entries(queries).map(async ([key, query]) => {
       try {
-        return [
-          key,
-          { records: await erp.list(query.doctype, query), error: null },
-        ] as const
+        const records = await reader.list(query.doctype, {
+          ...query,
+          fields: [...new Set(["company", ...query.fields])],
+        })
+        if (records.some((row) => row.company !== company.name))
+          throw new ERPNextError(
+            "ERPNext returned records for a different company.",
+            403,
+          )
+        return [key, { records, error: null }] as const
       } catch (error) {
         if (error instanceof ERPNextError && error.status === 401) throw error
         return [

@@ -7,14 +7,17 @@ export type ToolScope = {
   agent?: AgentId
   grantId?: string
   canPropose?: boolean
+  erpRead?: boolean
   evidence: unknown[]
 }
 export type PluginTool = {
   name: string
+  title?: string
   description: string
   schema: z.ZodObject
   audience: "agent" | "human" | "both"
   effect: "read" | "proposal" | "write" | "approval"
+  requiresERPRead?: boolean
   run: (scope: ToolScope, input: any) => Promise<unknown>
 }
 export type BusinessPlugin = {

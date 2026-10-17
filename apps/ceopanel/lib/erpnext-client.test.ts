@@ -8,13 +8,13 @@ describe("ERPNext transport", () => {
       .mockResolvedValueOnce(
         Response.json({
           data: Array.from({ length: 200 }, (_, i) => ({ name: `INV-${i}` })),
-        })
+        }),
       )
       .mockResolvedValueOnce(Response.json({ data: [{ name: "LAST" }] }))
     const erp = new ERPNextClient(
       "https://example.frappe.cloud",
       "private-session",
-      fetcher
+      fetcher,
     )
     const records = await erp.list("Sales Invoice", {
       fields: ["name"],
@@ -35,19 +35,19 @@ describe("ERPNext transport", () => {
     })
   })
   it("refuses to publish truncated financial totals", async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockImplementation(async () =>
-        Response.json({
-          data: Array.from({ length: 200 }, (_, i) => ({ name: `INV-${i}` })),
-        })
-      )
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (raw) =>
+      Response.json({
+        data: Array.from({ length: 200 }, (_, i) => ({
+          name: `INV-${Number(new URL(String(raw)).searchParams.get("limit_start")) + i}`,
+        })),
+      }),
+    )
     await expect(
       new ERPNextClient(
         "https://example.frappe.cloud",
         "session",
-        fetcher
-      ).list("Sales Invoice", { fields: ["name"] })
+        fetcher,
+      ).list("Sales Invoice", { fields: ["name"] }),
     ).rejects.toThrow("More than 10,000 records")
   })
   it("rejects guests and preserves permission failures", async () => {
@@ -55,18 +55,22 @@ describe("ERPNext transport", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({ message: "Guest" }))
     await expect(
-      new ERPNextClient("https://example.frappe.cloud", "session", guest).user()
+      new ERPNextClient(
+        "https://example.frappe.cloud",
+        "session",
+        guest,
+      ).user(),
     ).rejects.toMatchObject({ status: 401 })
     const denied = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
-        new Response("private upstream trace", { status: 403 })
+        new Response("private upstream trace", { status: 403 }),
       )
     await expect(
       new ERPNextClient("https://example.frappe.cloud", "session", denied).list(
         "Employee",
-        { fields: ["name"] }
-      )
+        { fields: ["name"] },
+      ),
     ).rejects.toMatchObject({
       status: 403,
       message:
@@ -81,8 +85,54 @@ describe("ERPNext transport", () => {
       new ERPNextClient(
         "https://example.frappe.cloud",
         "session",
-        fetcher
-      ).list("Project", { fields: ["name"] })
+        fetcher,
+      ).list("Project", { fields: ["name"] }),
     ).rejects.toThrow("invalid record list")
+  })
+  it("preserves OR filters on every page and rejects duplicate or malformed identities", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ data: [{ name: "A" }, { name: "A" }] }),
+      )
+    const erp = new ERPNextClient(
+      "https://example.frappe.cloud",
+      "session",
+      fetcher,
+    )
+    const query = {
+      fields: ["name"],
+      orFilters: [["name", "like", "%term%"]] as [string, string, string][],
+    }
+    await expect(erp.list("Customer", query)).rejects.toMatchObject({
+      status: 409,
+    })
+    expect(
+      JSON.parse(
+        new URL(String(fetcher.mock.calls[0][0])).searchParams.get(
+          "or_filters",
+        )!,
+      ),
+    ).toEqual(query.orFilters)
+    fetcher.mockResolvedValue(Response.json({ data: [null] }))
+    await expect(erp.list("Customer", query)).rejects.toThrow(
+      "invalid record list",
+    )
+  })
+  it("normalizes an invalid native SID at the identity endpoint without masking record permission errors", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response("private native auth error", { status: 403 }),
+      )
+    const erp = new ERPNextClient(
+      "https://example.frappe.cloud",
+      "invalid-session",
+      fetcher,
+    )
+    await expect(erp.user()).rejects.toMatchObject({ status: 401 })
+    await expect(
+      erp.list("Employee", { fields: ["name"] }),
+    ).rejects.toMatchObject({ status: 403 })
   })
 })

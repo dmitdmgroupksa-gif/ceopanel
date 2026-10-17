@@ -5,11 +5,21 @@ import {
   type DashboardData,
   type DashboardId,
 } from "./dashboards"
-import { client, siteUrl, timezone } from "./erpnext-server"
+import { client, siteUrl, timezone, selectCompany } from "./erpnext-server"
 import { ERPNextError } from "./erpnext-client"
 import { businessDate, type Company } from "./model"
 import { platformConfig } from "./platform/config"
 import { mappedDashboard } from "./platform/erp-adapters"
+import { permissionedReader } from "./erp-native/permissioned-reader"
+import {
+  isNativeDashboard,
+  nativeDashboard,
+  nativeDashboardIds,
+} from "./erp-native/dashboards"
+import {
+  operationalDashboard,
+  operationalDashboardIds,
+} from "./erp-native/operations-dashboards"
 
 export type DashboardContext = {
   user: string
@@ -28,20 +38,12 @@ export async function loadContext(
   const companies = await erp.list<Company>("Company", {
     fields: ["name", "default_currency"],
   })
-  const preferred = selectedCompany || process.env.ERPNEXT_COMPANY
-  const company = preferred
-    ? companies.find((item) => item.name === preferred)
-    : companies[0]
-  if (!company)
-    throw new ERPNextError(
-      "Your account cannot access the selected ERPNext company.",
-      403,
-    )
+  const company = selectCompany(companies, selectedCompany)
   const config = platformConfig()
-  const mapped =
-    Object.keys(config.agents).length > 0 ||
-    Object.keys(config.dashboards).length > 0
-  const roles = mapped ? await erp.bridge<string[]>("roles") : undefined
+  // Assistant assignments must not change access to ordinary ERP dashboards.
+  // Explicit dashboard role mappings still apply when supplied.
+  const mapped = Object.keys(config.dashboards).length > 0
+  const roles = mapped ? await erp.roles() : undefined
   const executive =
     roles && config.agents.executive?.roles.some((role) => roles.includes(role))
   return {
@@ -72,9 +74,29 @@ type Adapter = (
 // Register adapters only after the company provides data sources and definitions.
 // Supports ERPNext, Metabase, or another service through the same UI contract.
 export const dashboardAdapters: Partial<Record<DashboardId, Adapter>> = {}
+for (const id of nativeDashboardIds) {
+  dashboardAdapters[id] = async (context, period) =>
+    nativeDashboard(
+      permissionedReader(await client(), context),
+      id,
+      context,
+      period,
+    )
+}
+for (const id of operationalDashboardIds) {
+  dashboardAdapters[id] = async (context, period) => {
+    const erp = await client()
+    return operationalDashboard(
+      erp,
+      id,
+      { ...context, roles: context.roles ?? (await erp.roles()) },
+      period,
+    )
+  }
+}
 for (const [id, mapping] of Object.entries(platformConfig().dashboards)) {
   const definition = findDashboard(id)
-  if (definition && mapping.mappingValidated)
+  if (definition && mapping.mappingValidated && !isNativeDashboard(id))
     dashboardAdapters[definition.id] = (context, period) =>
       mappedDashboard(id, context, period)
 }
@@ -95,6 +117,8 @@ export async function loadDashboard(
   // Unmapped dashboards make no business-data requests.
   if (!adapter) return pending
   const context = await loadContext(selectedCompany)
+  if (context.dashboardIds && !context.dashboardIds.includes(definition.id))
+    throw new ERPNextError("Dashboard access denied.", 403)
   const result = await adapter(context, pending.period)
   if (
     result.dashboardId !== definition.id ||

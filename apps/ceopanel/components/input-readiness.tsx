@@ -1,4 +1,5 @@
 "use client"
+import { sessionFetch as fetch } from "@/lib/session-fetch"
 import { useEffect, useState } from "react"
 import { inputCategories } from "@/lib/platform/input-catalog"
 import { useLocale } from "./locale-provider"

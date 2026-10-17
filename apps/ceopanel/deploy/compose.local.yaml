@@ -1,0 +1,18 @@
+name: ceopanel-local
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ceopanel
+      POSTGRES_DB: ceopanel
+      POSTGRES_PASSWORD: ${CEOPANEL_LOCAL_DB_PASSWORD:?Set a private local database password}
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["database:/var/lib/postgresql/data"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ceopanel -d ceopanel"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  database:

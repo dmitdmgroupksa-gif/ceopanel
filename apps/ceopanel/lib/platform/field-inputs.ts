@@ -9,6 +9,7 @@ import type { UserContext } from "./policy"
 import type { AgentId, Proposal } from "./catalog"
 import { ERPNextError } from "../erpnext-client"
 import { agentAccess, moduleAccess } from "./policy"
+import { permittedEvidence } from "./evidence"
 export async function fieldInput(
   context: UserContext,
   agent: AgentId,
@@ -75,7 +76,7 @@ export async function fieldInput(
 export async function attachment(context: UserContext, id: string) {
   const row = (
     await database().query(
-      "SELECT a.*,p.company,p.proposer,p.agent FROM proposal_attachments a JOIN proposals p ON p.id=a.proposal WHERE a.id=$1",
+      "SELECT a.*,p.company,p.proposer,p.agent,p.payload,p.evidence FROM proposal_attachments a JOIN proposals p ON p.id=a.proposal WHERE a.id=$1",
       [id],
     )
   ).rows[0]
@@ -86,6 +87,19 @@ export async function attachment(context: UserContext, id: string) {
   )
     throw new ERPNextError("Attachment access denied.", 403)
   agentAccess(context, row.agent)
+  if (
+    !(
+      await permittedEvidence(context, [
+        {
+          id: row.proposal,
+          agent: row.agent,
+          payload: row.payload,
+          evidence: row.evidence,
+        },
+      ])
+    ).length
+  )
+    throw new ERPNextError("Attachment access denied.", 403)
   return new Response(new Uint8Array(await readFile(privatePath(id))), {
     headers: {
       "Content-Type": row.mime,

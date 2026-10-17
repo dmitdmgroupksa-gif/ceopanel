@@ -12,10 +12,20 @@ export type OfflineInput = {
 }
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("ceopanel-field-inputs", 1)
-    request.onupgradeneeded = () =>
-      request.result.createObjectStore("drafts", { keyPath: "id" })
-    request.onsuccess = () => resolve(request.result)
+    const request = indexedDB.open("ceopanel-field-inputs", 2)
+    request.onupgradeneeded = () => {
+      const store = request.result.objectStoreNames.contains("drafts")
+        ? request.transaction!.objectStore("drafts")
+        : request.result.createObjectStore("drafts", { keyPath: "id" })
+      if (!store.indexNames.contains("ownerCompany"))
+        store.createIndex("ownerCompany", ["owner", "company"])
+      if (!store.indexNames.contains("owner"))
+        store.createIndex("owner", "owner")
+    }
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close()
+      resolve(request.result)
+    }
     request.onerror = () => reject(request.error)
   })
 }
@@ -25,12 +35,8 @@ async function operation<T>(
 ): Promise<T> {
   const db = await open()
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction("drafts", mode),
-      request = fn(transaction.objectStore("drafts"))
+    const transaction = db.transaction("drafts", mode)
     let result: T
-    request.onsuccess = () => {
-      result = request.result
-    }
     transaction.oncomplete = () => {
       db.close()
       resolve(result)
@@ -40,12 +46,21 @@ async function operation<T>(
       reject(transaction.error)
     }
     transaction.onabort = transaction.onerror
+    try {
+      const request = fn(transaction.objectStore("drafts"))
+      request.onsuccess = () => {
+        result = request.result
+      }
+    } catch (error) {
+      transaction.abort()
+      db.close()
+      reject(error)
+    }
   })
 }
 export async function offlineInputs(owner: string, company: string) {
-  const all = await operation("readonly", (store) => store.getAll())
-  return (all as OfflineInput[]).filter(
-    (row) => row.owner === owner && row.company === company,
+  return await operation<OfflineInput[]>("readonly", (store) =>
+    store.index("ownerCompany").getAll(IDBKeyRange.only([owner, company])),
   )
 }
 export async function saveOfflineInput(input: OfflineInput) {
@@ -86,7 +101,11 @@ export async function removeOfflineInput(id: string) {
   await operation("readwrite", (store) => store.delete(id))
 }
 export async function clearOfflineInputs(owner: string) {
-  const all = await operation("readonly", (store) => store.getAll())
-  for (const input of all as OfflineInput[])
-    if (input.owner === owner) await removeOfflineInput(input.id)
+  await operation("readwrite", (store) => {
+    const keys = store.index("owner").getAllKeys(IDBKeyRange.only(owner))
+    keys.addEventListener("success", () => {
+      for (const key of keys.result) store.delete(key)
+    })
+    return keys
+  })
 }

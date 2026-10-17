@@ -11,6 +11,8 @@ import { ERPNextError } from "../erpnext-client"
 import { fieldInput, attachment } from "../platform/field-inputs"
 import { voiceSession, speakRun } from "../platform/voice"
 import { inputReadiness } from "../platform/inputs"
+import { binaryResult } from "./binary"
+export { binaryResult, binaryResponse, fileArgument } from "./binary"
 const id = z.string().min(1).max(140)
 const file = z
   .object({
@@ -19,36 +21,6 @@ const file = z
     base64: z.string().max(14000000),
   })
   .strict()
-export async function binaryResult(response: Response) {
-  return {
-    base64: Buffer.from(await response.arrayBuffer()).toString("base64"),
-    contentType:
-      response.headers.get("Content-Type") || "application/octet-stream",
-    disposition: response.headers.get("Content-Disposition"),
-  }
-}
-export function binaryResponse(
-  result: Awaited<ReturnType<typeof binaryResult>>,
-) {
-  return new Response(Buffer.from(result.base64, "base64"), {
-    headers: {
-      "Content-Type": result.contentType,
-      "Cache-Control": "private, no-store",
-      Vary: "Cookie",
-      "X-Content-Type-Options": "nosniff",
-      ...(result.disposition
-        ? { "Content-Disposition": result.disposition }
-        : {}),
-    },
-  })
-}
-export async function fileArgument(file: File) {
-  return {
-    filename: file.name,
-    mime: file.type,
-    base64: Buffer.from(await file.arrayBuffer()).toString("base64"),
-  }
-}
 export const platformPlugin: BusinessPlugin = {
   id: "platform",
   title: "Field operations and assistant services",
@@ -157,16 +129,18 @@ export const platformPlugin: BusinessPlugin = {
           agent: id,
           prompt: z.string().min(1).max(12000),
           language: z.enum(["en", "ar"]).default("en"),
+          previousRunId: z.uuid().optional(),
         })
         .strict(),
       audience: "human",
-      effect: "proposal",
+      effect: "read",
       run: async (s, a) =>
         (await import("../platform/agents")).runAgent(
           s.context,
           a.agent,
           a.prompt,
           a.language,
+          a.previousRunId,
         ),
     },
     {
@@ -205,7 +179,8 @@ export const platformPlugin: BusinessPlugin = {
         })
         .strict(),
       audience: "human",
-      effect: "write",
+      // Like agent_run, this processes a user request without changing ERP data.
+      effect: "read",
       run: (s, a) => voiceSession(s.context, a.agent, a.sdp, a.language),
     },
     {
@@ -213,7 +188,7 @@ export const platformPlugin: BusinessPlugin = {
       description: "Speak a permitted assistant answer.",
       schema: z.object({ id: z.uuid() }).strict(),
       audience: "human",
-      effect: "write",
+      effect: "read",
       run: async (s, a) => binaryResult(await speakRun(s.context, a.id)),
     },
     {
